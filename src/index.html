@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Imprime+</title>
+  <link rel="stylesheet" href="vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+
+<!-- ============ TOOLBAR ============ -->
+<header class="editor-toolbar">
+  <div class="toolbar-brand">
+    <i class="bi bi-printer-fill"></i> Imprime<span class="brand-plus">+</span>
+  </div>
+  <div class="toolbar-actions">
+    <button class="tb-btn tb-primary" id="btnAddImages" title="Agregar imagenes">
+      <i class="bi bi-images"></i> Agregar
+    </button>
+    <button class="tb-btn" id="btnPaste" title="Pegar desde portapapeles (Ctrl+V)">
+      <i class="bi bi-clipboard"></i> Pegar
+    </button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="btnZoomOut" title="Alejar"><i class="bi bi-dash-lg"></i></button>
+    <span class="tb-zoom-label" id="zoomLabel">100%</span>
+    <button class="tb-btn" id="btnZoomIn" title="Acercar"><i class="bi bi-plus-lg"></i></button>
+    <button class="tb-btn" id="btnZoomFit" title="Ajustar a ventana"><i class="bi bi-arrows-fullscreen"></i></button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="btnPageConfig" title="Configuracion de pagina">
+      <i class="bi bi-file-earmark-ruled"></i> Pagina
+    </button>
+    <div class="tb-sep"></div>
+    <select class="tb-select" id="printerSelect" title="Seleccionar impresora">
+      <option value="">Cargando...</option>
+    </select>
+    <button class="tb-btn" id="btnPrinterConfig" title="Configuracion de impresora"><i class="bi bi-sliders"></i></button>
+    <button class="tb-btn tb-primary" id="btnPrint" title="Imprimir todas las paginas"><i class="bi bi-printer"></i> Imprimir</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="btnCheckUpdate" title="Buscar actualizaciones"><i class="bi bi-cloud-arrow-down"></i></button>
+  </div>
+</header>
+
+<div class="editor-layout">
+
+  <!-- ============ LEFT PANEL - Settings ============ -->
+  <aside class="editor-panel panel-left" id="panelLeft">
+    <div class="panel-header">
+      <i class="bi bi-gear"></i> Ajustes Globales
+    </div>
+
+    <!-- Page Setup (summary) -->
+    <div class="panel-section">
+      <div class="panel-section-title"><i class="bi bi-file-earmark"></i> Pagina</div>
+      <div class="form-row">
+        <div id="pageSummary" style="color:var(--panel-text);font-size:0.82rem;">Carta - 21.59 x 27.94 cm</div>
+      </div>
+      <div class="form-row">
+        <button class="btn btn-outline btn-block" id="btnPageConfigPanel">
+          <i class="bi bi-gear"></i> Configurar pagina
+        </button>
+      </div>
+    </div>
+
+    <!-- Layout -->
+    <div class="panel-section">
+      <div class="panel-section-title"><i class="bi bi-grid-3x3"></i> Distribucion</div>
+      <div class="form-row">
+        <label>Modo</label>
+        <select class="fc" id="layoutMode">
+          <option value="grid">Filas x Columnas</option>
+          <option value="count">Cantidad por pagina</option>
+          <option value="size">Por tamano de imagen</option>
+        </select>
+      </div>
+      <!-- Grid mode -->
+      <div class="form-row form-row-dual layout-mode-grid">
+        <div><label>Filas</label><input type="number" class="fc" id="gridRows" value="3" min="1" max="20"></div>
+        <div><label>Columnas</label><input type="number" class="fc" id="gridCols" value="3" min="1" max="20"></div>
+      </div>
+      <!-- Count mode -->
+      <div class="form-row layout-mode-count hidden">
+        <label>Imagenes por pagina</label>
+        <input type="number" class="fc" id="countPerPage" value="9" min="1" max="100">
+      </div>
+      <!-- Size mode -->
+      <div class="form-row form-row-dual layout-mode-size hidden">
+        <div><label>Ancho img</label><input type="number" class="fc" id="imgWidth" value="5" step="0.1" min="0.5"></div>
+        <div><label>Alto img</label><input type="number" class="fc" id="imgHeight" value="5" step="0.1" min="0.5"></div>
+      </div>
+      <!-- Spacing -->
+      <div class="form-row">
+        <div class="spacing-row">
+          <div><label>Espacio H</label><input type="number" class="fc" id="spacingH" value="0.3" step="0.1" min="0"></div>
+          <button class="btn btn-outline btn-sm" id="btnLinkSpacing" title="Vincular espaciado H y V" style="margin-bottom:1px;padding:2px 6px;">
+            <i class="bi bi-link-45deg" id="linkSpacingIcon"></i>
+          </button>
+          <div><label>Espacio V</label><input type="number" class="fc" id="spacingV" value="0.3" step="0.1" min="0"></div>
+        </div>
+      </div>
+      <!-- Margins -->
+      <div class="form-row">
+        <div class="toggle-row">
+          <label class="toggle">
+            <input type="checkbox" id="marginsEnabled">
+            <span class="toggle-track"></span>
+          </label>
+          <span class="toggle-label">Margenes</span>
+        </div>
+      </div>
+      <div id="marginsOptions" class="hidden">
+        <div class="form-row form-row-dual">
+          <div><label>Superior</label><input type="number" class="fc" id="marginTop" value="0" step="0.1" min="0"></div>
+          <div><label>Inferior</label><input type="number" class="fc" id="marginBottom" value="0" step="0.1" min="0"></div>
+        </div>
+        <div class="form-row form-row-dual">
+          <div><label>Izquierdo</label><input type="number" class="fc" id="marginLeft" value="0" step="0.1" min="0"></div>
+          <div><label>Derecho</label><input type="number" class="fc" id="marginRight" value="0" step="0.1" min="0"></div>
+        </div>
+      </div>
+      <!-- Cut Guides -->
+      <div class="form-row">
+        <div class="toggle-row">
+          <label class="toggle">
+            <input type="checkbox" id="cutGuidesEnabled">
+            <span class="toggle-track"></span>
+          </label>
+          <span class="toggle-label">Guias de corte</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Image defaults -->
+    <div class="panel-section">
+      <div class="panel-section-title"><i class="bi bi-image"></i> Imagenes (global)</div>
+      <div class="form-row">
+        <label>Forma</label>
+        <select class="fc" id="imgShape">
+          <option value="rect">Rectangulo</option>
+          <option value="rounded">Redondeado</option>
+          <option value="circle">Circular</option>
+          <option value="hexagon">Hexagono</option>
+          <option value="star">Estrella</option>
+        </select>
+      </div>
+      <div class="form-row form-row-dual">
+        <div><label>Borde (px)</label><input type="number" class="fc" id="imgBorder" value="0" min="0" max="20"></div>
+        <div><label>Color borde</label><input type="color" class="fc" id="imgBorderColor" value="#000000"></div>
+      </div>
+      <div class="form-row form-row-dual">
+        <div><label>Radio (px)</label><input type="number" class="fc" id="imgRadius" value="0" min="0" max="50"></div>
+        <div><label>Sombra</label>
+          <select class="fc" id="imgShadow">
+            <option value="none">Ninguna</option>
+            <option value="light">Suave</option>
+            <option value="medium">Media</option>
+            <option value="strong">Fuerte</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Ajuste</label>
+        <select class="fc" id="imgFit">
+          <option value="cover" selected>Cubrir (recortar)</option>
+          <option value="contain">Contener (completa)</option>
+          <option value="fill">Estirar</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>Fondo celda</label>
+        <input type="color" class="fc" id="imgBgColor" value="#ffffff">
+      </div>
+      <div class="form-row">
+        <label>Alineacion horizontal</label>
+        <div class="btn-group-align" id="imgAlignH" data-value="center">
+          <button class="btn-align" data-val="left" title="Izquierda"><i class="bi bi-align-start"></i></button>
+          <button class="btn-align active" data-val="center" title="Centrado"><i class="bi bi-align-center"></i></button>
+          <button class="btn-align" data-val="right" title="Derecha"><i class="bi bi-align-end"></i></button>
+          <button class="btn-align" data-val="justify" title="Justificado"><i class="bi bi-justify"></i></button>
+        </div>
+      </div>
+      <div class="form-row">
+        <label>Alineacion vertical</label>
+        <div class="btn-group-align" id="imgAlignV" data-value="start">
+          <button class="btn-align active" data-val="top" title="Cabecera / Arriba"><i class="bi bi-align-top"></i></button>
+          <button class="btn-align" data-val="center" title="Centro"><i class="bi bi-align-middle"></i></button>
+          <button class="btn-align" data-val="bottom" title="Pie / Abajo"><i class="bi bi-align-bottom"></i></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Caption -->
+    <div class="panel-section">
+      <div class="panel-section-title"><i class="bi bi-fonts"></i> Titulos / Caption</div>
+      <div class="form-row">
+        <div class="toggle-row">
+          <label class="toggle">
+            <input type="checkbox" id="captionEnabled">
+            <span class="toggle-track"></span>
+          </label>
+          <span class="toggle-label">Mostrar titulos</span>
+        </div>
+      </div>
+      <div id="captionOptions" class="hidden">
+        <div class="form-row">
+          <label>Posicion</label>
+          <select class="fc" id="captionPosition">
+            <option value="below" selected>Debajo</option>
+            <option value="above">Arriba</option>
+            <option value="overlay">Sobre la imagen</option>
+          </select>
+        </div>
+        <div class="form-row form-row-dual">
+          <div><label>Fuente (px)</label><input type="number" class="fc" id="captionFontSize" value="10" min="6" max="36"></div>
+          <div><label>Tipografia</label>
+            <select class="fc" id="captionFontFamily">
+              <option value="system-ui" selected>System</option>
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="Georgia, serif">Georgia</option>
+              <option value="'Courier New', monospace">Courier</option>
+              <option value="'Times New Roman', serif">Times</option>
+              <option value="Verdana, sans-serif">Verdana</option>
+              <option value="Impact, sans-serif">Impact</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row form-row-dual">
+          <div><label>Color texto</label><input type="color" class="fc" id="captionColor" value="#374151"></div>
+          <div><label>Fondo</label><input type="color" class="fc" id="captionBgColor" value="#ffffff"></div>
+        </div>
+        <div class="form-row">
+          <label>Origen</label>
+          <select class="fc" id="captionSource">
+            <option value="filename" selected>Nombre de archivo</option>
+            <option value="number">Numeracion</option>
+            <option value="custom">Manual</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ============ CANVAS AREA ============ -->
+  <main class="editor-canvas-area" id="canvasArea">
+    <div class="canvas-scroll" id="canvasScroll">
+      <div class="pages-container" id="pagesContainer">
+        <!-- Pages rendered by JS -->
+      </div>
+    </div>
+    <!-- Drop zone overlay -->
+    <div class="drop-overlay" id="dropOverlay">
+      <div class="drop-overlay-content">
+        <i class="bi bi-cloud-arrow-up"></i>
+        <p>Suelta las imagenes aqui</p>
+      </div>
+    </div>
+    <!-- Page navigation -->
+    <nav class="page-nav" id="pageNav">
+      <button class="page-nav-btn" id="btnPageFirst" title="Primera pagina"><i class="bi bi-chevron-bar-left"></i></button>
+      <button class="page-nav-btn" id="btnPagePrev" title="Pagina anterior"><i class="bi bi-chevron-left"></i></button>
+      <span class="page-nav-label" id="pageNavLabel">Pagina 1 de 1</span>
+      <button class="page-nav-btn" id="btnPageNext" title="Pagina siguiente"><i class="bi bi-chevron-right"></i></button>
+      <button class="page-nav-btn" id="btnPageLast" title="Ultima pagina"><i class="bi bi-chevron-bar-right"></i></button>
+      <span class="page-nav-total" id="pageNavTotal"></span>
+    </nav>
+  </main>
+
+  <!-- ============ RIGHT PANEL - Image Inspector ============ -->
+  <aside class="editor-panel panel-right" id="panelRight">
+    <div class="panel-header">
+      <i class="bi bi-sliders"></i> Imagen seleccionada
+    </div>
+    <div id="inspectorEmpty" class="inspector-empty">
+      <i class="bi bi-hand-index"></i>
+      <p>Clic en imagen para editar. Ctrl+clic para seleccionar varias.</p>
+    </div>
+    <div id="inspectorContent" class="hidden">
+      <div class="panel-section">
+        <div class="inspector-thumb" id="inspectorThumb"></div>
+        <div class="form-row">
+          <label>Titulo</label>
+          <input type="text" class="fc" id="inspCaption" placeholder="Titulo de la imagen">
+        </div>
+        <div class="form-row">
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="inspCaptionEnabled">
+              <span class="toggle-track"></span>
+            </label>
+            <span class="toggle-label">Mostrar titulo individual</span>
+          </div>
+        </div>
+        <div id="inspCaptionOptions" class="hidden">
+          <div class="form-row">
+            <label>Posicion titulo</label>
+            <select class="fc" id="inspCaptionPosition">
+              <option value="">- Usar global -</option>
+              <option value="below">Debajo</option>
+              <option value="above">Arriba</option>
+              <option value="overlay">Sobre la imagen</option>
+            </select>
+          </div>
+          <div class="form-row form-row-dual">
+            <div><label>Fuente (px)</label><input type="number" class="fc" id="inspCaptionFontSize" placeholder="global" min="6" max="36"></div>
+            <div><label>Tipografia</label>
+              <select class="fc" id="inspCaptionFontFamily">
+                <option value="">- Usar global -</option>
+                <option value="system-ui">System</option>
+                <option value="Arial, sans-serif">Arial</option>
+                <option value="Georgia, serif">Georgia</option>
+                <option value="'Courier New', monospace">Courier</option>
+                <option value="'Times New Roman', serif">Times</option>
+                <option value="Verdana, sans-serif">Verdana</option>
+                <option value="Impact, sans-serif">Impact</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row form-row-dual">
+            <div><label>Color texto</label><input type="color" class="fc" id="inspCaptionColor" value="#374151"></div>
+            <div><label>Fondo</label><input type="color" class="fc" id="inspCaptionBgColor" value="#ffffff"></div>
+          </div>
+        </div>
+        <div class="form-row form-row-dual">
+          <div><label>Ancho</label><input type="number" class="fc" id="inspWidth" step="0.1" min="0.5"></div>
+          <div><label>Alto</label><input type="number" class="fc" id="inspHeight" step="0.1" min="0.5"></div>
+        </div>
+        <div class="form-row">
+          <label>Zoom interno</label>
+          <input type="range" class="fc" id="inspZoom" min="100" max="300" value="100">
+          <span class="range-value" id="inspZoomLabel">100%</span>
+        </div>
+        <div class="form-row form-row-dual">
+          <div><label>Offset X</label><input type="number" class="fc" id="inspOffsetX" value="0" step="1"></div>
+          <div><label>Offset Y</label><input type="number" class="fc" id="inspOffsetY" value="0" step="1"></div>
+        </div>
+        <div class="form-row">
+          <label>Rotacion</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <button class="btn btn-outline btn-sm" id="inspRotateLeft" title="Girar 90 izquierda"><i class="bi bi-arrow-counterclockwise"></i></button>
+            <span class="range-value" id="inspRotationLabel">0&#176;</span>
+            <input type="hidden" id="inspRotation" value="0">
+            <button class="btn btn-outline btn-sm" id="inspRotateRight" title="Girar 90 derecha"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Forma</label>
+          <select class="fc" id="inspShape">
+            <option value="">- Usar global -</option>
+            <option value="rect">Rectangulo</option>
+            <option value="rounded">Redondeado</option>
+            <option value="circle">Circular</option>
+            <option value="hexagon">Hexagono</option>
+            <option value="star">Estrella</option>
+          </select>
+        </div>
+        <div class="form-row form-row-dual">
+          <div><label>Borde</label><input type="number" class="fc" id="inspBorder" value="" min="0" max="20" placeholder="global"></div>
+          <div><label>Radio</label><input type="number" class="fc" id="inspRadius" value="" min="0" max="50" placeholder="global"></div>
+        </div>
+        <div class="form-row">
+          <label>Ajuste</label>
+          <select class="fc" id="inspFit">
+            <option value="">- Usar global -</option>
+            <option value="cover">Cubrir</option>
+            <option value="contain">Contener</option>
+            <option value="fill">Estirar</option>
+          </select>
+        </div>
+        <div class="form-row" style="margin-top:8px">
+          <button class="btn btn-danger-outline btn-block" id="inspDelete">
+            <i class="bi bi-trash"></i> Eliminar imagen
+          </button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<!-- Hidden file input -->
+<input type="file" id="fileInput" multiple accept="image/*" style="display:none">
+
+<!-- Modal: Page Configuration -->
+<div class="modal-backdrop" id="modalPageConfig">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h6><i class="bi bi-file-earmark-ruled"></i> Configuracion de Pagina</h6>
+      <button class="modal-close" id="modalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <!-- Preset -->
+      <div class="mb">
+        <label>Tamano predefinido</label>
+        <div class="input-row">
+          <select class="fc" id="pagePreset"></select>
+          <button class="btn btn-danger-outline btn-sm" id="btnDeletePreset" title="Eliminar preset"><i class="bi bi-trash"></i></button>
+        </div>
+      </div>
+      <!-- Unit -->
+      <div class="mb">
+        <label>Unidad</label>
+        <select class="fc" id="pageUnit">
+          <option value="cm" selected>Centimetros</option>
+          <option value="in">Pulgadas</option>
+          <option value="mm">Milimetros</option>
+        </select>
+      </div>
+      <!-- Dimensions -->
+      <div class="mb row2">
+        <div>
+          <label>Ancho</label>
+          <input type="number" class="fc" id="pageWidth" step="0.1" min="1">
+        </div>
+        <div>
+          <label>Alto</label>
+          <input type="number" class="fc" id="pageHeight" step="0.1" min="1">
+        </div>
+      </div>
+      <!-- Orientation -->
+      <div class="mb">
+        <label>Orientacion</label>
+        <div class="btn-group">
+          <button class="btn btn-outline active" id="btnPortrait"><i class="bi bi-phone"></i> Vertical</button>
+          <button class="btn btn-outline" id="btnLandscape"><i class="bi bi-phone-landscape"></i> Horizontal</button>
+        </div>
+      </div>
+      <hr>
+      <!-- Save as preset -->
+      <div class="mb">
+        <label>Guardar como preset</label>
+        <div class="input-row">
+          <input type="text" class="fc" id="presetName" placeholder="Nombre del preset">
+          <button class="btn btn-primary btn-sm" id="btnConfirmPreset"><i class="bi bi-bookmark-plus"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-primary" id="modalAccept"><i class="bi bi-check-lg"></i> Aceptar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Notification -->
+<div class="toast" id="toastNotification"></div>
+
+<!-- Context Menu -->
+<div class="ctx-menu" id="ctxMenu">
+  <button class="ctx-item" data-action="rotate"><i class="bi bi-arrow-clockwise"></i> Rotar 90&deg;</button>
+  <button class="ctx-item" data-action="duplicate"><i class="bi bi-copy"></i> Duplicar</button>
+  <div class="ctx-sep"></div>
+  <button class="ctx-item" data-action="expandH"><i class="bi bi-arrows-expand"></i> Ampliar horizontalmente</button>
+  <button class="ctx-item" data-action="expandV"><i class="bi bi-arrows-expand"></i> Ampliar verticalmente</button>
+  <div class="ctx-sep"></div>
+  <button class="ctx-item ctx-danger" data-action="clear"><i class="bi bi-x-circle"></i> Limpiar espacio</button>
+</div>
+
+<script src="js/engine.js"></script>
+<script src="js/editor.js"></script>
+</body>
+</html>
