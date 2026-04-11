@@ -37,7 +37,8 @@
     <button class="tb-btn" id="btnPrinterConfig" title="Configuracion de impresora"><i class="bi bi-sliders"></i></button>
     <button class="tb-btn tb-primary" id="btnPrint" title="Imprimir todas las paginas"><i class="bi bi-printer"></i> Imprimir</button>
     <div class="tb-sep"></div>
-    <button class="tb-btn" id="btnCheckUpdate" title="Buscar actualizaciones"><i class="bi bi-cloud-arrow-down"></i></button>
+    <button class="tb-btn" id="btnClearConfig" title="Limpiar configuraciones individuales"><i class="bi bi-eraser"></i></button>
+    <button class="tb-btn" id="btnClearAll" title="Vaciar todo (imagenes y configuraciones)"><i class="bi bi-trash3"></i> Vaciar</button>
   </div>
 </header>
 
@@ -109,11 +110,16 @@
         </div>
       </div>
       <div id="marginsOptions" class="hidden">
-        <div class="form-row form-row-dual">
-          <div><label>Superior</label><input type="number" class="fc" id="marginTop" value="0" step="0.1" min="0"></div>
-          <div><label>Inferior</label><input type="number" class="fc" id="marginBottom" value="0" step="0.1" min="0"></div>
+        <div class="form-row">
+          <div class="spacing-row">
+            <div><label>Superior</label><input type="number" class="fc" id="marginTop" value="0" step="0.1" min="0"></div>
+            <button class="btn btn-outline btn-sm" id="btnLinkMargins" title="Vincular margenes" style="margin-bottom:1px;padding:2px 6px;">
+              <i class="bi bi-link-45deg" id="linkMarginsIcon"></i>
+            </button>
+            <div><label>Inferior</label><input type="number" class="fc" id="marginBottom" value="0" step="0.1" min="0"></div>
+          </div>
         </div>
-        <div class="form-row form-row-dual">
+        <div class="form-row form-row-dual" id="marginsLR">
           <div><label>Izquierdo</label><input type="number" class="fc" id="marginLeft" value="0" step="0.1" min="0"></div>
           <div><label>Derecho</label><input type="number" class="fc" id="marginRight" value="0" step="0.1" min="0"></div>
         </div>

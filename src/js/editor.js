@@ -13,6 +13,7 @@
   let zoom = 1;
   let idCounter = 0;
   let spacingLinked = true;
+  let marginsLinked = true;
   let dragSourceId = null;
   let _suppressClick = false;
   let currentPage = 0;
@@ -955,6 +956,56 @@
     }
   }
 
+  // -- Linked Margins --
+  function toggleMarginsLink() {
+    marginsLinked = !marginsLinked;
+    var btn = $('#btnLinkMargins');
+    if (marginsLinked) {
+      btn.classList.add('active');
+      var v = $('#marginTop').value;
+      $('#marginBottom').value = v;
+      $('#marginLeft').value = v;
+      $('#marginRight').value = v;
+      $('#marginsLR').classList.add('hidden');
+      render();
+    } else {
+      btn.classList.remove('active');
+      $('#marginsLR').classList.remove('hidden');
+    }
+  }
+
+  function onMarginChange(source) {
+    if (!marginsLinked) return;
+    var v = $('#' + source).value;
+    ['marginTop','marginBottom','marginLeft','marginRight'].forEach(function(id) {
+      $('#' + id).value = v;
+    });
+  }
+
+  // -- Clear All / Clear Config --
+  function clearAll() {
+    if (!images.length) return;
+    if (!confirm('Vaciar todo? Se eliminaran todas las imagenes y sus configuraciones individuales.')) return;
+    images = [];
+    selectedIds.clear();
+    idCounter = 0;
+    currentPage = 0;
+    updateInspector();
+    render();
+  }
+
+  function clearConfig() {
+    if (!images.length) return;
+    images.forEach(function(img) {
+      img.overrides = {};
+      img.caption = '';
+    });
+    selectedIds.clear();
+    updateInspector();
+    render();
+    showToast('Configuraciones individuales limpiadas');
+  }
+
   // -- Printer State --
   var savedPrinter = '';
   var printerList = [];
@@ -1440,6 +1491,10 @@
       $('#marginLeft').value = '0';
       $('#marginRight').value = '0';
     }
+    // Hide LR row if linked
+    if (marginsLinked) {
+      $('#marginsLR').classList.add('hidden');
+    }
   }
 
   // -- Orientation --
@@ -1487,8 +1542,9 @@
       }
     });
 
-    // Check for updates
-    $('#btnCheckUpdate').addEventListener('click', checkForUpdates);
+    // Clear all / Clear config
+    $('#btnClearAll').addEventListener('click', clearAll);
+    $('#btnClearConfig').addEventListener('click', clearConfig);
 
     // Printer selection
     var prSel = $('#printerSelect');
@@ -1511,7 +1567,7 @@
     $('#btnLandscape').addEventListener('click', () => setOrientation(true));
 
     // Page config inputs
-    var pageInputs = '#pageWidth,#pageHeight,#pageUnit,#marginTop,#marginRight,#marginBottom,#marginLeft';
+    var pageInputs = '#pageWidth,#pageHeight,#pageUnit';
     pageInputs.split(',').forEach(sel => {
       const el = $(sel);
       if (!el) return;
@@ -1535,9 +1591,20 @@
     $('#spacingV').addEventListener('input', () => { onSpacingChange('v'); render(); });
     $('#spacingV').addEventListener('change', () => { onSpacingChange('v'); render(); saveConfig(); });
 
+    // Linked margins
+    $('#btnLinkMargins').addEventListener('click', toggleMarginsLink);
+    $('#marginTop').addEventListener('input', () => { onMarginChange('marginTop'); render(); });
+    $('#marginTop').addEventListener('change', () => { onMarginChange('marginTop'); render(); saveConfig(); });
+    $('#marginBottom').addEventListener('input', () => { onMarginChange('marginBottom'); render(); });
+    $('#marginBottom').addEventListener('change', () => { onMarginChange('marginBottom'); render(); saveConfig(); });
+    $('#marginLeft').addEventListener('input', () => { onMarginChange('marginLeft'); render(); });
+    $('#marginLeft').addEventListener('change', () => { onMarginChange('marginLeft'); render(); saveConfig(); });
+    $('#marginRight').addEventListener('input', () => { onMarginChange('marginRight'); render(); });
+    $('#marginRight').addEventListener('change', () => { onMarginChange('marginRight'); render(); saveConfig(); });
+
     // All panel settings inputs
     var settingsInputs = '#gridRows,#gridCols,#countPerPage,#imgWidth,#imgHeight,' +
-      '#marginTop,#marginRight,#marginBottom,#marginLeft,#cutGuidesEnabled,' +
+      '#cutGuidesEnabled,' +
       '#imgShape,#imgBorder,#imgBorderColor,#imgRadius,#imgShadow,#imgFit,#imgBgColor,' +
       '#captionEnabled,#captionPosition,#captionFontSize,#captionFontFamily,#captionColor,#captionBgColor,#captionSource';
     settingsInputs.split(',').forEach(sel => {
@@ -1703,10 +1770,14 @@
       $('#btnLinkSpacing').classList.add('active');
       $('#spacingV').value = $('#spacingH').value;
     }
+    // Set margins linked visual state
+    if (marginsLinked) {
+      $('#btnLinkMargins').classList.add('active');
+      $('#marginsLR').classList.add('hidden');
+    }
     render();
     zoomFit();
     loadPrinters();
-    checkForUpdates(true);
   }
 
   function showToast(msg, duration) {
@@ -1716,39 +1787,6 @@
     el.classList.add('show');
     clearTimeout(el._toastTimer);
     el._toastTimer = setTimeout(function() { el.classList.remove('show'); }, duration || 3000);
-  }
-
-  async function checkForUpdates(silent) {
-    try {
-      if (!window.__TAURI__ || !window.__TAURI__.core) {
-        if (!silent) showToast('Imprime+ notifica: No disponible fuera de Tauri');
-        return;
-      }
-      var core = window.__TAURI__.core;
-      var metadata = await core.invoke('plugin:updater|check');
-      if (metadata) {
-        var msg = 'Nueva version ' + metadata.version + ' disponible.\nDesea actualizar ahora?';
-        if (metadata.body) msg += '\n\n' + metadata.body;
-        if (confirm(msg)) {
-          showToast('Imprime+ notifica: Descargando actualizacion...');
-          var channel = new core.Channel();
-          await core.invoke('plugin:updater|download_and_install', {
-            onEvent: channel,
-            rid: metadata.rid
-          });
-          showToast('Imprime+ notifica: Reiniciando...');
-          await core.invoke('plugin:process|restart');
-        } else {
-          // User declined, close the resource
-          await core.invoke('plugin:resources|close', { rid: metadata.rid });
-        }
-      } else if (!silent) {
-        showToast('Imprime+ notifica: Ya tiene la ultima version.');
-      }
-    } catch (e) {
-      console.error('Update check failed:', e);
-      if (!silent) showToast('Imprime+ notifica: Error al verificar actualizaciones.');
-    }
   }
 
   document.addEventListener('DOMContentLoaded', init);

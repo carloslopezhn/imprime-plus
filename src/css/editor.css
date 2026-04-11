@@ -784,6 +784,16 @@ input[type="range"].fc:focus { box-shadow: none; }
   display: block;
 }
 
+/* -- Toolbar clear buttons -- */
+.tb-btn.tb-danger {
+  color: var(--danger);
+}
+.tb-btn.tb-danger:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
 /* -- Cut Guides (crop marks at corners) -- */
 .cut-guide-mark {
   position: absolute;
