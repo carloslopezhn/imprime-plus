@@ -18,6 +18,8 @@
   let _suppressClick = false;
   let currentPage = 0;
   let totalPages = 1;
+  let moveModeId = null;
+  let moveTimer = null;
 
   // -- DOM refs --
   const $ = (s) => document.querySelector(s);
@@ -682,48 +684,17 @@
           cellEl.dataset.id = img.id;
           if (selectedIds.has(img.id)) cellEl.classList.add('selected');
 
-          // Drag handle for reorder
-          var dragHandle = document.createElement('div');
-          dragHandle.className = 'drag-handle';
-          dragHandle.innerHTML = '<i class="bi bi-grip-vertical"></i>';
-          dragHandle.title = 'Arrastrar para reordenar';
-          dragHandle.draggable = true;
-          dragHandle.addEventListener('mousedown', function(ev) { ev.stopPropagation(); });
-          dragHandle.addEventListener('dragstart', function(ev) {
-            dragSourceId = img.id;
-            cellEl.classList.add('dragging');
-            ev.dataTransfer.effectAllowed = 'move';
-            ev.dataTransfer.setData('text/plain', String(img.id));
+          // Move checkbox for reorder (top-left corner)
+          var moveCheck = document.createElement('div');
+          moveCheck.className = 'move-check' + (moveModeId === img.id ? ' active' : '');
+          moveCheck.innerHTML = '<i class="bi bi-arrows-move"></i>';
+          moveCheck.title = 'Activar para mover con flechas';
+          moveCheck.addEventListener('mousedown', function(ev) { ev.stopPropagation(); });
+          moveCheck.addEventListener('click', function(ev) {
+            ev.stopPropagation();
+            toggleMoveMode(img.id);
           });
-          dragHandle.addEventListener('dragend', function() {
-            cellEl.classList.remove('dragging');
-            dragSourceId = null;
-            $$('.img-cell.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
-          });
-          cellEl.appendChild(dragHandle);
-
-          // Drop targets on cell
-          cellEl.addEventListener('dragover', function(ev) {
-            if (dragSourceId === null) return;
-            ev.preventDefault();
-            ev.dataTransfer.dropEffect = 'move';
-            cellEl.classList.add('drag-over');
-          });
-          cellEl.addEventListener('dragleave', function() {
-            cellEl.classList.remove('drag-over');
-          });
-          cellEl.addEventListener('drop', function(ev) {
-            ev.preventDefault();
-            cellEl.classList.remove('drag-over');
-            if (dragSourceId === null) return;
-            var fromIdx = images.findIndex(function(im) { return im.id === dragSourceId; });
-            var toIdx = images.findIndex(function(im) { return im.id === img.id; });
-            if (fromIdx !== -1 && toIdx !== -1 && fromIdx !== toIdx) {
-              var moved = images.splice(fromIdx, 1)[0];
-              images.splice(toIdx, 0, moved);
-              render();
-            }
-          });
+          cellEl.appendChild(moveCheck);
 
           const capPos = (ov.captionPosition || cfg.captionPosition);
           const capFS = (ov.captionFontSize || cfg.captionFontSize);
@@ -802,6 +773,7 @@
 
           cellEl.addEventListener('click', (e) => {
             if (_suppressClick || e.defaultPrevented) return;
+            if (moveModeId !== null && moveModeId !== img.id) { exitMoveMode(); }
             selectImage(img.id, e.ctrlKey || e.metaKey);
           });
 
@@ -966,11 +938,9 @@
       $('#marginBottom').value = v;
       $('#marginLeft').value = v;
       $('#marginRight').value = v;
-      $('#marginsLR').classList.add('hidden');
       render();
     } else {
       btn.classList.remove('active');
-      $('#marginsLR').classList.remove('hidden');
     }
   }
 
@@ -1368,6 +1338,55 @@
     render();
   }
 
+  // -- Move Mode (reorder with arrow keys) --
+  function toggleMoveMode(imgId) {
+    if (moveModeId === imgId) {
+      exitMoveMode();
+    } else {
+      moveModeId = imgId;
+      resetMoveTimer();
+      render();
+      showToast('Usa las flechas para mover la imagen', 2000);
+    }
+  }
+
+  function exitMoveMode() {
+    if (moveModeId === null) return;
+    moveModeId = null;
+    clearTimeout(moveTimer);
+    moveTimer = null;
+    render();
+  }
+
+  function resetMoveTimer() {
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(function() {
+      exitMoveMode();
+    }, 3000);
+  }
+
+  function moveImageByArrow(direction) {
+    if (moveModeId === null) return false;
+    var idx = images.findIndex(function(im) { return im.id === moveModeId; });
+    if (idx === -1) { exitMoveMode(); return false; }
+    var cfg = getConfig();
+    var layout = Engine.computeLayout(cfg);
+    var cols = layout.cols;
+    var targetIdx = -1;
+    if (direction === 'ArrowRight' && idx < images.length - 1) targetIdx = idx + 1;
+    else if (direction === 'ArrowLeft' && idx > 0) targetIdx = idx - 1;
+    else if (direction === 'ArrowDown' && idx + cols < images.length) targetIdx = idx + cols;
+    else if (direction === 'ArrowUp' && idx - cols >= 0) targetIdx = idx - cols;
+    if (targetIdx >= 0 && targetIdx < images.length) {
+      var temp = images[idx];
+      images[idx] = images[targetIdx];
+      images[targetIdx] = temp;
+      resetMoveTimer();
+      render();
+    }
+    return true;
+  }
+
   function ctxExpandH() {
     if (!ctxTarget) return;
     var ov = ctxTarget.overrides;
@@ -1485,16 +1504,6 @@
   function updateMarginsVisibility() {
     var enabled = $('#marginsEnabled').checked;
     $('#marginsOptions').classList.toggle('hidden', !enabled);
-    if (!enabled) {
-      $('#marginTop').value = '0';
-      $('#marginBottom').value = '0';
-      $('#marginLeft').value = '0';
-      $('#marginRight').value = '0';
-    }
-    // Hide LR row if linked
-    if (marginsLinked) {
-      $('#marginsLR').classList.add('hidden');
-    }
   }
 
   // -- Orientation --
@@ -1697,6 +1706,13 @@
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       var isInput = (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA');
+      // Arrow keys for move mode
+      if (moveModeId !== null && ['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.key) !== -1 && !isInput) {
+        e.preventDefault();
+        moveImageByArrow(e.key);
+        return;
+      }
+      if (e.key === 'Escape' && moveModeId !== null) { exitMoveMode(); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size && !isInput) { e.preventDefault(); removeSelectedImages(); }
       if ((e.key === 'r' || e.key === 'R') && selectedIds.size && !e.ctrlKey && !isInput) {
         selectedIds.forEach(function(sid) {
@@ -1721,6 +1737,7 @@
     // Click canvas to deselect
     canvasScroll.addEventListener('click', (e) => {
       if (e.target === canvasScroll || e.target === pagesContainer) {
+        if (moveModeId !== null) exitMoveMode();
         selectedIds.clear();
         $$('.img-cell.selected').forEach(el => el.classList.remove('selected'));
         updateInspector();
@@ -1773,7 +1790,6 @@
     // Set margins linked visual state
     if (marginsLinked) {
       $('#btnLinkMargins').classList.add('active');
-      $('#marginsLR').classList.add('hidden');
     }
     render();
     zoomFit();
