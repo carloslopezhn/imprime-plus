@@ -593,21 +593,30 @@
     $('#btnPagePrev').disabled = currentPage === 0;
     $('#btnPageNext').disabled = currentPage >= totalPages - 1;
     $('#btnPageLast').disabled = currentPage >= totalPages - 1;
+    // Page number dots
+    var dots = $('#pageDots');
+    if (dots) {
+      dots.innerHTML = '';
+      for (var i = 0; i < totalPages; i++) {
+        var dot = document.createElement('button');
+        dot.className = 'page-dot' + (i === currentPage ? ' active' : '');
+        dot.textContent = (i + 1);
+        dot.dataset.page = i;
+        dot.addEventListener('click', function() { goToPage(parseInt(this.dataset.page)); });
+        dots.appendChild(dot);
+      }
+    }
   }
 
   function goToPage(idx) {
     if (idx < 0) idx = 0;
     if (idx >= totalPages) idx = totalPages - 1;
     currentPage = idx;
-    updatePageNav();
-    scrollToCurrentPage();
-  }
-
-  function scrollToCurrentPage() {
-    const pages = pagesContainer.children;
-    if (pages[currentPage]) {
-      pages[currentPage].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var pages = pagesContainer.children;
+    for (var i = 0; i < pages.length; i++) {
+      pages[i].classList.toggle('active-page', i === currentPage);
     }
+    updatePageNav();
   }
 
   // -- Render --
@@ -624,7 +633,7 @@
 
     pages.forEach((page, pi) => {
       const pageEl = document.createElement('div');
-      pageEl.className = 'print-page';
+      pageEl.className = 'print-page' + (pi === currentPage ? ' active-page' : '');
       pageEl.style.width = layout.pageW + 'px';
       pageEl.style.height = layout.pageH + 'px';
       pageEl.style.transform = 'scale(' + zoom + ')';
