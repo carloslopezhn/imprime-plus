@@ -71,6 +71,8 @@
       captionFontFamily: $('#captionFontFamily').value,
       captionColor: $('#captionColor').value,
       captionBgColor: $('#captionBgColor').value,
+      captionOverlayColor: $('#captionOverlayColor').value,
+      captionOverlayBg: $('#captionOverlayBg').value,
       captionSource: $('#captionSource').value,
       imgAlignH: $('#imgAlignH').dataset.value || 'center',
       imgAlignV: $('#imgAlignV').dataset.value || 'center',
@@ -146,7 +148,8 @@
       shadow:'imgShadow', fit:'imgFit', bgColor:'imgBgColor',
       captionPosition:'captionPosition', captionFontSize:'captionFontSize',
       captionFontFamily:'captionFontFamily', captionColor:'captionColor',
-      captionBgColor:'captionBgColor', captionSource:'captionSource',
+      captionBgColor:'captionBgColor', captionOverlayColor:'captionOverlayColor',
+      captionOverlayBg:'captionOverlayBg', captionSource:'captionSource',
 
     };
     for (var k in map) {
@@ -414,8 +417,12 @@
     $('#inspCaptionFontFamily').value = ov.captionFontFamily || '';
     $('#inspCaptionColor').value = ov.captionColor || cfg.captionColor;
     $('#inspCaptionBgColor').value = ov.captionBgColor || cfg.captionBgColor;
+    $('#inspCaptionOverlayColor').value = ov.captionOverlayColor || cfg.captionOverlayColor || '#ffffff';
+    $('#inspCaptionOverlayBg').value = ov.captionOverlayBg || cfg.captionOverlayBg || '#000000';
     var showCapOpts = ov.captionEnabled !== undefined ? ov.captionEnabled : cfg.captionEnabled;
     $('#inspCaptionOptions').classList.toggle('hidden', !showCapOpts);
+    var inspCapPos = ov.captionPosition || cfg.captionPosition;
+    $('#inspCaptionOverlayColors').classList.toggle('hidden', inspCapPos !== 'overlay');
   }
 
   function applyInspector() {
@@ -455,9 +462,13 @@
     ov.captionFontFamily = $('#inspCaptionFontFamily').value || undefined;
     ov.captionColor = $('#inspCaptionColor').value || undefined;
     ov.captionBgColor = $('#inspCaptionBgColor').value || undefined;
+    ov.captionOverlayColor = $('#inspCaptionOverlayColor').value || undefined;
+    ov.captionOverlayBg = $('#inspCaptionOverlayBg').value || undefined;
 
     $('#inspZoomLabel').textContent = ov.zoom + '%';
     $('#inspCaptionOptions').classList.toggle('hidden', !ov.captionEnabled);
+    var inspCapPos = ov.captionPosition || cfg.captionPosition;
+    $('#inspCaptionOverlayColors').classList.toggle('hidden', inspCapPos !== 'overlay');
     saveConfig();
     render();
   }
@@ -677,7 +688,7 @@
           : false;
 
         cellEl.style.width = cw + 'px';
-        cellEl.style.height = (imgCaptionEnabled ? 'auto' : ch + 'px');
+        cellEl.style.height = ch + 'px';
         cellEl.style.background = cellBg;
 
         if (img) {
@@ -701,6 +712,17 @@
           const capFF = (ov.captionFontFamily || cfg.captionFontFamily);
           const capC = (ov.captionColor || cfg.captionColor);
           const capBg = (ov.captionBgColor || cfg.captionBgColor);
+          const overlayC = ov.captionOverlayColor || cfg.captionOverlayColor || '#ffffff';
+          const overlayBg = ov.captionOverlayBg || cfg.captionOverlayBg || '#000000';
+
+          // Caption height for above/below (reduces image area)
+          const captionH = imgCaptionEnabled && capPos !== 'overlay' ? (capFS + 6) : 0;
+
+          // Use flex column so above/below captions flow with order
+          if (captionH > 0) {
+            cellEl.style.display = 'flex';
+            cellEl.style.flexDirection = 'column';
+          }
 
           if (imgCaptionEnabled && capPos === 'above') {
             const cap = document.createElement('div');
@@ -709,6 +731,8 @@
             cap.style.fontFamily = capFF;
             cap.style.color = capC;
             cap.style.background = capBg;
+            cap.style.height = captionH + 'px';
+            cap.style.lineHeight = captionH + 'px';
             cap.textContent = getCaption(img, i, cfg);
             cellEl.appendChild(cap);
           }
@@ -716,7 +740,7 @@
           const inner = document.createElement('div');
           inner.className = 'img-cell-inner';
           inner.style.width = cw + 'px';
-          inner.style.height = ch + 'px';
+          inner.style.height = (ch - captionH) + 'px';
           if (border > 0) {
             inner.style.border = border + 'px solid ' + cfg.borderColor;
           }
@@ -761,8 +785,16 @@
             cap.className = 'img-caption ' + capPos;
             cap.style.fontSize = capFS + 'px';
             cap.style.fontFamily = capFF;
-            cap.style.color = capPos === 'overlay' ? '#fff' : capC;
-            cap.style.background = capPos === 'overlay' ? 'rgba(0,0,0,0.55)' : capBg;
+            if (capPos === 'overlay') {
+              var hr = parseInt(overlayBg.slice(1,3),16), hg = parseInt(overlayBg.slice(3,5),16), hb = parseInt(overlayBg.slice(5,7),16);
+              cap.style.color = overlayC;
+              cap.style.background = 'rgba(' + hr + ',' + hg + ',' + hb + ',0.55)';
+            } else {
+              cap.style.color = capC;
+              cap.style.background = capBg;
+              cap.style.height = captionH + 'px';
+              cap.style.lineHeight = captionH + 'px';
+            }
             cap.textContent = getCaption(img, i, cfg);
             if (capPos === 'overlay') {
               inner.appendChild(cap);
@@ -1169,22 +1201,31 @@
       var radius = ov.radius !== undefined && ov.radius !== null ? ov.radius : cfg.radius;
       var cellBg = cfg.bgColor;
 
+      // Caption metrics for above/below
+      var captionEnabled = (ov.captionEnabled !== undefined) ? ov.captionEnabled : cfg.captionEnabled;
+      var capPos = ov.captionPosition || cfg.captionPosition;
+      var capFS = ov.captionFontSize || cfg.captionFontSize;
+      var capH = capFS + 6;
+      var captionH = captionEnabled && capPos !== 'overlay' ? capH : 0;
+      var imgCy = capPos === 'above' ? cy + captionH : cy;
+      var imgCh = ch - captionH;
+
       // Cell background + clip
       ctx.save();
       ctx.fillStyle = cellBg;
-      clipShape(ctx, shape, cx, cy, cw, ch, radius);
+      clipShape(ctx, shape, cx, imgCy, cw, imgCh, radius);
       ctx.fill();
 
       // Draw image
       try {
         var imgEl = await loadImageEl(img.src);
         ctx.save();
-        ctx.translate(cx + cw / 2, cy + ch / 2);
+        ctx.translate(cx + cw / 2, imgCy + imgCh / 2);
         if (rot) ctx.rotate(rot * Math.PI / 180);
         ctx.scale(zoomFactor, zoomFactor);
         ctx.translate(ox / zoomFactor, oy / zoomFactor);
-        ctx.translate(-cw / 2, -ch / 2);
-        drawFitCanvas(ctx, imgEl, 0, 0, cw, ch, fit);
+        ctx.translate(-cw / 2, -imgCh / 2);
+        drawFitCanvas(ctx, imgEl, 0, 0, cw, imgCh, fit);
         ctx.restore();
       } catch (e) { /* skip broken image */ }
 
@@ -1197,11 +1238,11 @@
         ctx.lineWidth = border;
         ctx.beginPath();
         if (shape === 'circle') {
-          ctx.ellipse(cx + cw / 2, cy + ch / 2, cw / 2 - border / 2, ch / 2 - border / 2, 0, 0, Math.PI * 2);
+          ctx.ellipse(cx + cw / 2, imgCy + imgCh / 2, cw / 2 - border / 2, imgCh / 2 - border / 2, 0, 0, Math.PI * 2);
         } else {
           var br = (shape === 'rounded' || radius > 0) ? (radius || 12) : 0;
           if (br > 0) {
-            var bx = cx + border / 2, by = cy + border / 2, bw = cw - border, bh = ch - border;
+            var bx = cx + border / 2, by = imgCy + border / 2, bw = cw - border, bh = imgCh - border;
             ctx.moveTo(bx + br, by);
             ctx.lineTo(bx + bw - br, by);
             ctx.arcTo(bx + bw, by, bx + bw, by + br, br);
@@ -1212,7 +1253,7 @@
             ctx.lineTo(bx, by + br);
             ctx.arcTo(bx, by, bx + br, by, br);
           } else {
-            ctx.rect(cx + border / 2, cy + border / 2, cw - border, ch - border);
+            ctx.rect(cx + border / 2, imgCy + border / 2, cw - border, imgCh - border);
           }
         }
         ctx.stroke();
@@ -1220,29 +1261,33 @@
       }
 
       // Captions
-      var captionEnabled = (ov.captionEnabled !== undefined) ? ov.captionEnabled : cfg.captionEnabled;
       if (captionEnabled) {
-        var capPos = ov.captionPosition || cfg.captionPosition;
-        var capFS = ov.captionFontSize || cfg.captionFontSize;
         var capFF = ov.captionFontFamily || cfg.captionFontFamily;
-        var capC = (capPos === 'overlay') ? '#ffffff' : (ov.captionColor || cfg.captionColor);
-        var capBg = (capPos === 'overlay') ? 'rgba(0,0,0,0.55)' : (ov.captionBgColor || cfg.captionBgColor);
+        var capC, capBg;
+        if (capPos === 'overlay') {
+          var olBg = ov.captionOverlayBg || cfg.captionOverlayBg || '#000000';
+          var hr = parseInt(olBg.slice(1,3),16), hg = parseInt(olBg.slice(3,5),16), hb = parseInt(olBg.slice(5,7),16);
+          capC = ov.captionOverlayColor || cfg.captionOverlayColor || '#ffffff';
+          capBg = 'rgba(' + hr + ',' + hg + ',' + hb + ',0.55)';
+        } else {
+          capC = ov.captionColor || cfg.captionColor;
+          capBg = ov.captionBgColor || cfg.captionBgColor;
+        }
         var capText = getCaption(img, i, cfg);
 
         ctx.save();
         ctx.font = capFS + 'px ' + capFF;
         ctx.textAlign = 'center';
-        ctx.textBaseline = 'top';
-        var capH = capFS + 4;
+        ctx.textBaseline = 'middle';
         var capY;
         if (capPos === 'above') { capY = cy; }
-        else if (capPos === 'overlay') { capY = cy + ch - capH; }
-        else { capY = cy + ch; }
+        else if (capPos === 'overlay') { capY = imgCy + (imgCh - capH) / 2; }
+        else { capY = imgCy + imgCh; }
 
         ctx.fillStyle = capBg;
         ctx.fillRect(cx, capY, cw, capH);
         ctx.fillStyle = capC;
-        ctx.fillText(capText, cx + cw / 2, capY + 2, cw);
+        ctx.fillText(capText, cx + cw / 2, capY + capH / 2, cw);
         ctx.restore();
       }
 
@@ -1498,7 +1543,12 @@
   }
 
   function updateCaptionVisibility() {
-    $('#captionOptions').classList.toggle('hidden', !$('#captionEnabled').checked);
+    var enabled = $('#captionEnabled').checked;
+    $('#captionOptions').classList.toggle('hidden', !enabled);
+    if (enabled) {
+      var pos = $('#captionPosition').value;
+      $('#captionOverlayColors').classList.toggle('hidden', pos !== 'overlay');
+    }
   }
 
   function updateMarginsVisibility() {
@@ -1589,6 +1639,8 @@
 
     // Caption toggle
     $('#captionEnabled').addEventListener('change', () => { updateCaptionVisibility(); render(); });
+    // Caption position toggle overlay colors
+    $('#captionPosition').addEventListener('change', () => { updateCaptionVisibility(); render(); saveConfig(); });
 
     // Margins toggle
     $('#marginsEnabled').addEventListener('change', () => { updateMarginsVisibility(); render(); saveConfig(); });
@@ -1615,7 +1667,8 @@
     var settingsInputs = '#gridRows,#gridCols,#countPerPage,#imgWidth,#imgHeight,' +
       '#cutGuidesEnabled,' +
       '#imgShape,#imgBorder,#imgBorderColor,#imgRadius,#imgShadow,#imgFit,#imgBgColor,' +
-      '#captionEnabled,#captionPosition,#captionFontSize,#captionFontFamily,#captionColor,#captionBgColor,#captionSource';
+      '#captionEnabled,#captionPosition,#captionFontSize,#captionFontFamily,#captionColor,#captionBgColor,#captionSource,' +
+      '#captionOverlayColor,#captionOverlayBg';
     settingsInputs.split(',').forEach(sel => {
       const el = $(sel);
       if (!el) return;
@@ -1624,7 +1677,7 @@
     });
 
     // Inspector
-    var inspInputs = '#inspCaption,#inspCaptionEnabled,#inspWidth,#inspHeight,#inspZoom,#inspOffsetX,#inspOffsetY,#inspShape,#inspBorder,#inspRadius,#inspFit,#inspRotation,#inspCaptionPosition,#inspCaptionFontSize,#inspCaptionFontFamily,#inspCaptionColor,#inspCaptionBgColor';
+    var inspInputs = '#inspCaption,#inspCaptionEnabled,#inspWidth,#inspHeight,#inspZoom,#inspOffsetX,#inspOffsetY,#inspShape,#inspBorder,#inspRadius,#inspFit,#inspRotation,#inspCaptionPosition,#inspCaptionFontSize,#inspCaptionFontFamily,#inspCaptionColor,#inspCaptionBgColor,#inspCaptionOverlayColor,#inspCaptionOverlayBg';
     inspInputs.split(',').forEach(sel => {
       const el = $(sel);
       if (!el) return;

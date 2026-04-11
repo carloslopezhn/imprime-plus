@@ -528,13 +528,15 @@ input[type="range"].fc:focus { box-shadow: none; }
   background: rgba(255,255,255,0.9);
 }
 .img-caption.above {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  z-index: 2;
+  order: -1;
+}
+.img-caption.below {
+  order: 1;
 }
 .img-caption.overlay {
   position: absolute;
-  bottom: 0; left: 0; right: 0;
+  top: 50%; left: 0; right: 0;
+  transform: translateY(-50%);
   background: rgba(0,0,0,0.55);
   color: #fff;
   z-index: 2;
@@ -788,6 +790,31 @@ input[type="range"].fc:focus { box-shadow: none; }
   color: var(--panel-text);
   margin-bottom: 2px;
   display: block;
+}
+
+/* -- Margins cross layout -- */
+.margins-cross {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  grid-template-rows: auto auto auto;
+  gap: 4px 6px;
+  align-items: end;
+  padding: 0 4px;
+}
+.margin-cell-top    { grid-column: 1 / -1; text-align: center; max-width: 60%; margin: 0 auto; }
+.margin-cell-left   { grid-column: 1; grid-row: 2; }
+.margin-cell-link   { grid-column: 2; grid-row: 2; align-self: center; padding: 4px 6px; }
+.margin-cell-right  { grid-column: 3; grid-row: 2; }
+.margin-cell-bottom { grid-column: 1 / -1; text-align: center; max-width: 60%; margin: 0 auto; }
+.margins-cross label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--panel-text);
+  margin-bottom: 2px;
+  display: block;
+}
+.margins-cross input {
+  width: 100%;
 }
 
 /* -- Toolbar clear buttons -- */

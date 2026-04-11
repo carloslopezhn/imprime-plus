@@ -110,18 +110,26 @@
         </div>
       </div>
       <div id="marginsOptions" class="hidden">
-        <div class="form-row">
-          <div class="spacing-row">
-            <div><label>Superior</label><input type="number" class="fc" id="marginTop" value="0" step="0.1" min="0"></div>
-            <button class="btn btn-outline btn-sm" id="btnLinkMargins" title="Vincular margenes" style="margin-bottom:1px;padding:2px 6px;">
-              <i class="bi bi-link-45deg" id="linkMarginsIcon"></i>
-            </button>
-            <div><label>Inferior</label><input type="number" class="fc" id="marginBottom" value="0" step="0.1" min="0"></div>
+        <div class="margins-cross">
+          <div class="margin-cell-top">
+            <label>Superior</label>
+            <input type="number" class="fc" id="marginTop" value="0" step="0.1" min="0">
           </div>
-        </div>
-        <div class="form-row form-row-dual" id="marginsLR">
-          <div><label>Izquierdo</label><input type="number" class="fc" id="marginLeft" value="0" step="0.1" min="0"></div>
-          <div><label>Derecho</label><input type="number" class="fc" id="marginRight" value="0" step="0.1" min="0"></div>
+          <div class="margin-cell-left">
+            <label>Izquierdo</label>
+            <input type="number" class="fc" id="marginLeft" value="0" step="0.1" min="0">
+          </div>
+          <button class="btn btn-outline btn-sm margin-cell-link" id="btnLinkMargins" title="Vincular margenes">
+            <i class="bi bi-link-45deg" id="linkMarginsIcon"></i>
+          </button>
+          <div class="margin-cell-right">
+            <label>Derecho</label>
+            <input type="number" class="fc" id="marginRight" value="0" step="0.1" min="0">
+          </div>
+          <div class="margin-cell-bottom">
+            <label>Inferior</label>
+            <input type="number" class="fc" id="marginBottom" value="0" step="0.1" min="0">
+          </div>
         </div>
       </div>
       <!-- Cut Guides -->
@@ -234,6 +242,10 @@
           <div><label>Color texto</label><input type="color" class="fc" id="captionColor" value="#374151"></div>
           <div><label>Fondo</label><input type="color" class="fc" id="captionBgColor" value="#ffffff"></div>
         </div>
+        <div class="form-row form-row-dual hidden" id="captionOverlayColors">
+          <div><label>Sombra overlay</label><input type="color" class="fc" id="captionOverlayBg" value="#000000"></div>
+          <div><label>Texto overlay</label><input type="color" class="fc" id="captionOverlayColor" value="#ffffff"></div>
+        </div>
         <div class="form-row">
           <label>Origen</label>
           <select class="fc" id="captionSource">
@@ -324,6 +336,10 @@
           <div class="form-row form-row-dual">
             <div><label>Color texto</label><input type="color" class="fc" id="inspCaptionColor" value="#374151"></div>
             <div><label>Fondo</label><input type="color" class="fc" id="inspCaptionBgColor" value="#ffffff"></div>
+          </div>
+          <div class="form-row form-row-dual hidden" id="inspCaptionOverlayColors">
+            <div><label>Sombra overlay</label><input type="color" class="fc" id="inspCaptionOverlayBg" value="#000000"></div>
+            <div><label>Texto overlay</label><input type="color" class="fc" id="inspCaptionOverlayColor" value="#ffffff"></div>
           </div>
         </div>
         <div class="form-row form-row-dual">
