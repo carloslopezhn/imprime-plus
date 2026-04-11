@@ -1,5 +1,5 @@
 """Imprime+ - Print Layout Editor and Update Server"""
-from flask import Flask, render_template, request, jsonify, abort
+from flask import Flask, render_template, request, jsonify, abort, send_from_directory
 from flask_compress import Compress
 from packaging.version import Version
 import pymysql
@@ -12,6 +12,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'imprime-plus-dev-key-2026')
 Compress(app)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+DOWNLOADS_DIR = os.path.join(os.path.dirname(__file__), "downloads")
 
 # ---------- Database ----------
 DB_CONFIG = {
@@ -79,15 +80,10 @@ def load_latest():
     if not os.path.exists(path):
         return None
     with open(path, 'r') as f:
-        return json.load(f)
+        return json.loads(f.read().encode().lstrip(b'\xef\xbb\xbf').decode('utf-8'))
 
 
-# ---------- Editor Routes ----------
-
-@app.route('/')
-def index():
-    return render_template('editor.html')
-
+# ---------- Presets API ----------
 
 @app.route('/api/presets', methods=['GET'])
 def get_presets():
@@ -165,7 +161,7 @@ def check_update(target, arch, current_version):
     if server <= current:
         return '', 204
 
-    platform_key = f'{target}-{arch}'
+    platform_key = target
     platforms = latest.get('platforms', {})
     if platform_key not in platforms:
         return '', 204
@@ -185,7 +181,7 @@ def check_update(target, arch, current_version):
 
 # ---------- Download Page ----------
 
-@app.route('/descargar')
+@app.route('/')
 def download_page():
     latest = load_latest()
     version = latest['version'] if latest else '---'
@@ -202,6 +198,11 @@ def download_page():
                            pub_date=pub_date,
                            notes=notes,
                            platforms=platforms)
+
+
+@app.route('/downloads/<filename>')
+def serve_download(filename):
+    return send_from_directory(DOWNLOADS_DIR, filename, as_attachment=True)
 
 
 if __name__ == '__main__':

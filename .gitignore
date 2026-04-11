@@ -4,3 +4,7 @@ src-tauri/target/
 latest.json
 *.exe
 *.sig
+server/data/
+server/downloads/
+__pycache__/
+*.pyc

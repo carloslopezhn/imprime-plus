@@ -1,0 +1,43 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: imprime-plus-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: imprimeplus2026
+      MYSQL_DATABASE: imprimeplus
+      MYSQL_USER: imprime
+      MYSQL_PASSWORD: imprimeplus2026
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - default
+
+  web:
+    build: .
+    container_name: imprime-plus-web
+    restart: unless-stopped
+    ports:
+      - "5002:5002"
+    depends_on:
+      - db
+    environment:
+      - SECRET_KEY=${SECRET_KEY:-imprime-plus-prod-2026}
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_NAME=imprimeplus
+      - DB_USER=imprime
+      - DB_PASSWORD=imprimeplus2026
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+    networks:
+      - default
+      - pos_default
+
+volumes:
+  db_data:
+
+networks:
+  pos_default:
+    external: true

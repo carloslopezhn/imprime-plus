@@ -634,8 +634,19 @@
       content.style.justifyContent = gridAlignMap[galignH] || 'center';
       content.style.alignContent = gridAlignMap[galignV] || 'start';
 
-      for (let i = 0; i < layout.totalSlots; i++) {
-        const img = page.images[i];
+      // Calculate occupied cells from image spans
+      var occupiedCells = 0;
+      for (var si = 0; si < page.images.length; si++) {
+        var sov = page.images[si] ? (page.images[si].overrides || {}) : {};
+        var scs = Math.min(sov.colSpan || 1, layout.cols);
+        var srs = Math.min(sov.rowSpan || 1, layout.rows);
+        occupiedCells += scs * srs;
+      }
+      var emptyCells = Math.max(0, layout.totalSlots - occupiedCells);
+      var totalCells = page.images.length + emptyCells;
+
+      for (let i = 0; i < totalCells; i++) {
+        const img = i < page.images.length ? page.images[i] : null;
         const cellEl = document.createElement('div');
 
         const ov = img ? (img.overrides || {}) : {};
@@ -1088,18 +1099,41 @@
       else offsetX = (contentW - gridW) / 2;
     }
 
-    for (var i = 0; i < layout.totalSlots; i++) {
+    // Grid placement tracker for spanning
+    var printGrid = [];
+    for (var gr = 0; gr < layout.rows; gr++) printGrid.push(new Array(layout.cols).fill(false));
+
+    for (var i = 0; i < pageImages.length; i++) {
       var img = pageImages[i];
       if (!img) continue;
 
-      var col = i % layout.cols;
-      var row = Math.floor(i / layout.cols);
+      var ov = img.overrides || {};
+      var cs = (ov.colSpan > 1) ? Math.min(ov.colSpan, layout.cols) : 1;
+      var rs = (ov.rowSpan > 1) ? Math.min(ov.rowSpan, layout.rows) : 1;
+
+      // Find placement in grid (dense algorithm)
+      var col = -1, row = -1;
+      for (var pr = 0; pr <= layout.rows - rs && col === -1; pr++) {
+        for (var pc = 0; pc <= layout.cols - cs && col === -1; pc++) {
+          var canFit = true;
+          for (var dr = 0; dr < rs && canFit; dr++) {
+            for (var dc = 0; dc < cs && canFit; dc++) {
+              if (printGrid[pr + dr][pc + dc]) canFit = false;
+            }
+          }
+          if (canFit) {
+            col = pc; row = pr;
+            for (var dr = 0; dr < rs; dr++)
+              for (var dc = 0; dc < cs; dc++)
+                printGrid[row + dr][col + dc] = true;
+          }
+        }
+      }
+      if (col === -1) continue; // shouldn't happen since paginate already checked
+
       var cx = layout.marginLeft + offsetX + col * (layout.cellW + spacingH);
       var cy = layout.marginTop + offsetY + row * (layout.cellH + spacingV);
 
-      var ov = img.overrides || {};
-      var cs = (ov.colSpan > 1) ? Math.min(ov.colSpan, layout.cols - col) : 1;
-      var rs = (ov.rowSpan > 1) ? Math.min(ov.rowSpan, layout.rows - row) : 1;
       var cw = layout.cellW * cs + spacingH * (cs - 1);
       var ch = layout.cellH * rs + spacingV * (rs - 1);
 
@@ -1686,17 +1720,27 @@
 
   async function checkForUpdates(silent) {
     try {
-      if (!window.__TAURI__) {
+      if (!window.__TAURI__ || !window.__TAURI__.core) {
         if (!silent) showToast('Imprime+ notifica: No disponible fuera de Tauri');
         return;
       }
-      var update = await window.__TAURI__.updater.check();
-      if (update) {
-        var msg = 'Nueva version ' + update.version + ' disponible.\nDesea actualizar ahora?';
-        if (update.body) msg += '\n\n' + update.body;
+      var core = window.__TAURI__.core;
+      var metadata = await core.invoke('plugin:updater|check');
+      if (metadata) {
+        var msg = 'Nueva version ' + metadata.version + ' disponible.\nDesea actualizar ahora?';
+        if (metadata.body) msg += '\n\n' + metadata.body;
         if (confirm(msg)) {
-          await update.downloadAndInstall();
-          await window.__TAURI__.process.relaunch();
+          showToast('Imprime+ notifica: Descargando actualizacion...');
+          var channel = new core.Channel();
+          await core.invoke('plugin:updater|download_and_install', {
+            onEvent: channel,
+            rid: metadata.rid
+          });
+          showToast('Imprime+ notifica: Reiniciando...');
+          await core.invoke('plugin:process|restart');
+        } else {
+          // User declined, close the resource
+          await core.invoke('plugin:resources|close', { rid: metadata.rid });
         }
       } else if (!silent) {
         showToast('Imprime+ notifica: Ya tiene la ultima version.');

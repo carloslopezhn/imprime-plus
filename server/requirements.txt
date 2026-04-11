@@ -1,0 +1,6 @@
+flask>=3.0
+gunicorn>=21.2
+flask-compress>=1.14
+pymysql>=1.1
+cryptography>=44.0
+packaging>=24.0

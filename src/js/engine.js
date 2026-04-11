@@ -76,16 +76,72 @@ const Engine = (function () {
   }
 
   /**
-   * Distribute images across pages.
+   * Try to place a span (cs x rs) in a grid. Returns true if placed.
+   */
+  function tryPlace(grid, cols, rows, cs, rs) {
+    for (var r = 0; r <= rows - rs; r++) {
+      for (var c = 0; c <= cols - cs; c++) {
+        var fits = true;
+        for (var dr = 0; dr < rs && fits; dr++) {
+          for (var dc = 0; dc < cs && fits; dc++) {
+            if (grid[r + dr][c + dc]) fits = false;
+          }
+        }
+        if (fits) {
+          for (var dr = 0; dr < rs; dr++) {
+            for (var dc = 0; dc < cs; dc++) {
+              grid[r + dr][c + dc] = true;
+            }
+          }
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function makeGrid(cols, rows) {
+    var g = [];
+    for (var r = 0; r < rows; r++) {
+      g.push(new Array(cols).fill(false));
+    }
+    return g;
+  }
+
+  /**
+   * Distribute images across pages, accounting for colSpan/rowSpan.
    * Returns array of page objects: [{ images: [{...}, ...] }, ...]
    */
   function paginate(images, layout) {
-    const pages = [];
-    const perPage = layout.perPage;
-    for (let i = 0; i < images.length; i += perPage) {
-      pages.push({ images: images.slice(i, i + perPage) });
+    var pages = [];
+    var cols = layout.cols;
+    var rows = layout.rows;
+    var perPage = layout.perPage;
+    var grid = makeGrid(cols, rows);
+    var pageImages = [];
+
+    for (var i = 0; i < images.length; i++) {
+      var img = images[i];
+      var ov = img.overrides || {};
+      var cs = Math.min(ov.colSpan || 1, cols);
+      var rs = Math.min(ov.rowSpan || 1, rows);
+
+      // In count mode, also enforce the per-page image count limit
+      var countFull = (perPage < cols * rows) && (pageImages.length >= perPage);
+
+      if (countFull || !tryPlace(grid, cols, rows, cs, rs)) {
+        // Current page can't fit this image -- start new page
+        pages.push({ images: pageImages });
+        pageImages = [];
+        grid = makeGrid(cols, rows);
+        // Retry placement on fresh page
+        tryPlace(grid, cols, rows, cs, rs);
+      }
+
+      pageImages.push(img);
     }
-    // Always at least one page
+
+    pages.push({ images: pageImages });
     if (pages.length === 0) pages.push({ images: [] });
     return pages;
   }
