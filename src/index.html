@@ -424,10 +424,22 @@
         </div>
       </div>
     </div>
+    <!-- Poster Preview (visible only in poster mode) -->
+    <div id="posterPreviewPanel" class="hidden">
+      <div class="panel-header">
+        <i class="bi bi-easel"></i> Vista de Poster
+      </div>
+      <div class="panel-section">
+        <div id="posterFullPreview" class="poster-full-preview">
+          <!-- Rendered by JS -->
+        </div>
+        <div class="form-row" style="margin-top:8px;text-align:center;">
+          <span id="posterPreviewInfo" style="font-size:0.78rem;color:var(--panel-text-muted);"></span>
+        </div>
+      </div>
+    </div>
   </aside>
 </div>
-
-<!-- Hidden file input -->
 <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
 
 <!-- Modal: Page Configuration -->

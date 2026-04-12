@@ -666,9 +666,12 @@
   function render() {
     const cfg = getConfig();
     if (cfg.posterEnabled) {
+      updateRightPanelForMode();
       renderPoster(cfg);
+      renderPosterPreview(cfg);
       return;
     }
+    updateRightPanelForMode();
     renderNormal(cfg);
   }
 
@@ -738,6 +741,106 @@
     }
 
     updatePageNav();
+  }
+
+  function renderPosterPreview(cfg) {
+    var container = $('#posterFullPreview');
+    var info = $('#posterPreviewInfo');
+    if (!container) return;
+
+    var img = images.length > 0 ? images[0] : null;
+    var posterCols = Math.max(1, Math.min(4, cfg.posterCols));
+    var posterRows = Math.max(1, Math.min(4, cfg.posterRows));
+
+    if (!img) {
+      container.innerHTML = '<div style="padding:20px;text-align:center;color:#94a3b8;"><i class="bi bi-image" style="font-size:2rem;"></i><p>Sin imagen</p></div>';
+      info.textContent = '';
+      return;
+    }
+
+    // Calculate preview size to fit in the panel (~240px wide)
+    var unit = cfg.unit || 'cm';
+    var pageW = Engine.toPx(cfg.pageWidth, unit);
+    var pageH = Engine.toPx(cfg.pageHeight, unit);
+    var totalW = pageW * posterCols;
+    var totalH = pageH * posterRows;
+    var maxW = 240;
+    var scale = maxW / totalW;
+    var previewW = totalW * scale;
+    var previewH = totalH * scale;
+    var cellW = pageW * scale;
+    var cellH = pageH * scale;
+
+    container.innerHTML = '';
+    container.style.width = previewW + 'px';
+    container.style.height = previewH + 'px';
+    container.style.margin = '0 auto';
+
+    // Background image
+    var imgEl = document.createElement('img');
+    imgEl.src = img.src;
+    imgEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border-radius:4px;';
+    imgEl.draggable = false;
+    container.appendChild(imgEl);
+
+    // Grid lines overlay
+    var gridOverlay = document.createElement('div');
+    gridOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+
+    // Vertical lines
+    for (var c = 1; c < posterCols; c++) {
+      var line = document.createElement('div');
+      line.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:rgba(255,255,255,0.8);box-shadow:0 0 2px rgba(0,0,0,0.5);left:' + (c * cellW) + 'px;';
+      gridOverlay.appendChild(line);
+    }
+    // Horizontal lines
+    for (var r = 1; r < posterRows; r++) {
+      var line = document.createElement('div');
+      line.style.cssText = 'position:absolute;left:0;right:0;height:1px;background:rgba(255,255,255,0.8);box-shadow:0 0 2px rgba(0,0,0,0.5);top:' + (r * cellH) + 'px;';
+      gridOverlay.appendChild(line);
+    }
+
+    // Page number labels
+    for (var pr = 0; pr < posterRows; pr++) {
+      for (var pc = 0; pc < posterCols; pc++) {
+        var pageNum = pr * posterCols + pc + 1;
+        var label = document.createElement('div');
+        var isActive = (pr * posterCols + pc) === currentPage;
+        label.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;' +
+          'font-size:' + Math.max(10, Math.min(16, cellW / 3)) + 'px;font-weight:700;' +
+          'color:' + (isActive ? '#3b82f6' : 'rgba(255,255,255,0.9)') + ';' +
+          'text-shadow:0 1px 3px rgba(0,0,0,0.7);' +
+          'left:' + (pc * cellW) + 'px;top:' + (pr * cellH) + 'px;' +
+          'width:' + cellW + 'px;height:' + cellH + 'px;' +
+          (isActive ? 'background:rgba(59,130,246,0.15);border:2px solid rgba(59,130,246,0.5);box-sizing:border-box;' : '');
+        label.textContent = pageNum;
+        gridOverlay.appendChild(label);
+      }
+    }
+
+    container.appendChild(gridOverlay);
+
+    var wCm = (cfg.pageWidth * posterCols).toFixed(1);
+    var hCm = (cfg.pageHeight * posterRows).toFixed(1);
+    info.textContent = 'Poster: ' + wCm + ' x ' + hCm + ' ' + unit + ' (' + posterCols + 'x' + posterRows + ' paginas)';
+  }
+
+  function updateRightPanelForMode() {
+    var posterEnabled = $('#posterEnabled').checked;
+    // Hide normal inspector content, show poster preview (or vice versa)
+    $('#inspectorEmpty').classList.toggle('hidden', posterEnabled);
+    $('#inspectorContent').classList.add('hidden');
+    var posterPanel = $('#posterPreviewPanel');
+    if (posterPanel) {
+      posterPanel.classList.toggle('hidden', !posterEnabled);
+    }
+    // Update panel header
+    var panelHeader = $('#panelRight').querySelector('.panel-header');
+    if (posterEnabled) {
+      panelHeader.innerHTML = '<i class="bi bi-easel"></i> Vista de Poster';
+    } else {
+      panelHeader.innerHTML = '<i class="bi bi-sliders"></i> Imagen seleccionada';
+    }
   }
 
   function renderNormal(cfg) {
@@ -1773,12 +1876,16 @@
     $('#posterOptions').classList.toggle('hidden', !enabled);
     // Disable/enable layout sections when poster is active
     var layoutSection = $('#layoutSection');
-    var marginsToggle = $('#marginsEnabled');
-    var cutGuidesToggle = $('#cutGuidesEnabled');
-    var spacingSection = document.querySelector('.spacing-row');
     if (enabled) {
       layoutSection.classList.add('poster-disabled');
       $('#posterGridPreview').innerHTML = '<span>' + $('#posterCols').value + ' x ' + $('#posterRows').value + ' = ' + (parseInt($('#posterCols').value) * parseInt($('#posterRows').value)) + ' paginas</span>';
+      // Trim to first image only
+      if (images.length > 1) {
+        images = [images[0]];
+        selectedIds.clear();
+        currentPage = 0;
+        showToast('Modo poster: solo se conserva la primera imagen');
+      }
     } else {
       layoutSection.classList.remove('poster-disabled');
     }
