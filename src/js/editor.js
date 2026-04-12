@@ -78,6 +78,9 @@
       imgAlignV: $('#imgAlignV').dataset.value || 'center',
       cutGuides: $('#cutGuidesEnabled').checked,
       marginsEnabled: $('#marginsEnabled').checked,
+      posterEnabled: $('#posterEnabled').checked,
+      posterCols: parseInt($('#posterCols').value) || 2,
+      posterRows: parseInt($('#posterRows').value) || 2,
     };
   }
 
@@ -161,6 +164,9 @@
     if (saved.captionEnabled !== undefined) $('#captionEnabled').checked = saved.captionEnabled;
     if (saved.cutGuides !== undefined) $('#cutGuidesEnabled').checked = saved.cutGuides;
     if (saved.marginsEnabled !== undefined) $('#marginsEnabled').checked = saved.marginsEnabled;
+    if (saved.posterEnabled !== undefined) $('#posterEnabled').checked = saved.posterEnabled;
+    if (saved.posterCols !== undefined) $('#posterCols').value = saved.posterCols;
+    if (saved.posterRows !== undefined) $('#posterRows').value = saved.posterRows;
     // Restore alignment button groups
     ['imgAlignH', 'imgAlignV'].forEach(function(key) {
       if (saved[key]) {
@@ -297,17 +303,38 @@
 
   // -- Images --
   function addImageFiles(files) {
-    Array.from(files).forEach(file => {
-      if (!file.type.startsWith('image/')) return;
+    var filesToProcess = Array.from(files).filter(function(f) { return f.type.startsWith('image/'); });
+    if (!filesToProcess.length) return;
+
+    // Poster mode: only one image allowed, take the first
+    if ($('#posterEnabled').checked) {
+      filesToProcess = [filesToProcess[0]];
+      if (images.length > 0) {
+        showToast('Modo poster: reemplazando imagen');
+      }
+    }
+
+    filesToProcess.forEach(function(file) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        images.push({
-          id: ++idCounter,
-          src: e.target.result,
-          name: file.name.replace(/\.[^.]+$/, ''),
-          caption: '',
-          overrides: {},
-        });
+        if ($('#posterEnabled').checked) {
+          images = [{
+            id: ++idCounter,
+            src: e.target.result,
+            name: file.name.replace(/\.[^.]+$/, ''),
+            caption: '',
+            overrides: {},
+          }];
+          selectedIds.clear();
+        } else {
+          images.push({
+            id: ++idCounter,
+            src: e.target.result,
+            name: file.name.replace(/\.[^.]+$/, ''),
+            caption: '',
+            overrides: {},
+          });
+        }
         render();
       };
       reader.readAsDataURL(file);
@@ -317,13 +344,25 @@
   function addImageFromClipboard(blob) {
     const reader = new FileReader();
     reader.onload = (e) => {
-      images.push({
-        id: ++idCounter,
-        src: e.target.result,
-        name: 'Pegado ' + idCounter,
-        caption: '',
-        overrides: {},
-      });
+      if ($('#posterEnabled').checked) {
+        // Poster mode: replace with single image
+        images = [{
+          id: ++idCounter,
+          src: e.target.result,
+          name: 'Pegado ' + idCounter,
+          caption: '',
+          overrides: {},
+        }];
+        selectedIds.clear();
+      } else {
+        images.push({
+          id: ++idCounter,
+          src: e.target.result,
+          name: 'Pegado ' + idCounter,
+          caption: '',
+          overrides: {},
+        });
+      }
       render();
     };
     reader.readAsDataURL(blob);
@@ -586,9 +625,13 @@
     $('#pageNavLabel').textContent = 'Pagina ' + (currentPage + 1) + ' de ' + totalPages;
     const imgCount = images.length;
     const cfg = getConfig();
-    const layout = Engine.computeLayout(cfg);
-    const perPage = layout.perPage;
-    $('#pageNavTotal').textContent = imgCount > 0 ? '(' + imgCount + ' imagenes, ' + perPage + ' por pagina)' : '';
+    if (cfg.posterEnabled) {
+      $('#pageNavTotal').textContent = imgCount > 0 ? '(poster ' + cfg.posterCols + 'x' + cfg.posterRows + ')' : '';
+    } else {
+      const layout = Engine.computeLayout(cfg);
+      const perPage = layout.perPage;
+      $('#pageNavTotal').textContent = imgCount > 0 ? '(' + imgCount + ' imagenes, ' + perPage + ' por pagina)' : '';
+    }
     $('#btnPageFirst').disabled = currentPage === 0;
     $('#btnPagePrev').disabled = currentPage === 0;
     $('#btnPageNext').disabled = currentPage >= totalPages - 1;
@@ -622,6 +665,82 @@
   // -- Render --
   function render() {
     const cfg = getConfig();
+    if (cfg.posterEnabled) {
+      renderPoster(cfg);
+      return;
+    }
+    renderNormal(cfg);
+  }
+
+  function renderPoster(cfg) {
+    const unit = cfg.unit || 'cm';
+    const pageW = Engine.toPx(cfg.pageWidth, unit);
+    const pageH = Engine.toPx(cfg.pageHeight, unit);
+    const posterCols = Math.max(1, Math.min(4, cfg.posterCols));
+    const posterRows = Math.max(1, Math.min(4, cfg.posterRows));
+    totalPages = posterCols * posterRows;
+
+    // Use only the first image
+    const img = images.length > 0 ? images[0] : null;
+
+    if (currentPage >= totalPages) currentPage = totalPages - 1;
+    if (currentPage < 0) currentPage = 0;
+
+    pagesContainer.innerHTML = '';
+
+    for (var pr = 0; pr < posterRows; pr++) {
+      for (var pc = 0; pc < posterCols; pc++) {
+        var pi = pr * posterCols + pc;
+        var pageEl = document.createElement('div');
+        pageEl.className = 'print-page poster-page' + (pi === currentPage ? ' active-page' : '');
+        pageEl.style.width = pageW + 'px';
+        pageEl.style.height = pageH + 'px';
+        pageEl.style.transform = 'scale(' + zoom + ')';
+        pageEl.style.overflow = 'hidden';
+
+        var badge = document.createElement('div');
+        badge.className = 'page-number-badge';
+        badge.textContent = '-- Poster ' + (pi + 1) + ' de ' + totalPages + ' (fila ' + (pr + 1) + ', col ' + (pc + 1) + ') --';
+        pageEl.appendChild(badge);
+
+        if (img) {
+          var imgEl = document.createElement('img');
+          imgEl.src = img.src;
+          imgEl.alt = img.name || '';
+          imgEl.draggable = false;
+          imgEl.className = 'poster-img';
+          // The full poster is posterCols*pageW x posterRows*pageH
+          // Each page shows a section: offset by -pc*pageW, -pr*pageH
+          imgEl.style.cssText = 'display:block;position:absolute;top:0;left:0;' +
+            'width:' + (pageW * posterCols) + 'px;' +
+            'height:' + (pageH * posterRows) + 'px;' +
+            'object-fit:cover;' +
+            'margin-left:-' + (pc * pageW) + 'px;' +
+            'margin-top:-' + (pr * pageH) + 'px;';
+          var content = document.createElement('div');
+          content.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;';
+          content.appendChild(imgEl);
+          pageEl.appendChild(content);
+
+          // Dashed border overlay
+          var overlay = document.createElement('div');
+          overlay.className = 'poster-page-overlay';
+          pageEl.appendChild(overlay);
+        } else {
+          var empty = document.createElement('div');
+          empty.className = 'poster-empty';
+          empty.innerHTML = '<i class="bi bi-image" style="font-size:3rem;color:#94a3b8;"></i><p style="color:#94a3b8;margin-top:8px;">Agrega una imagen para el poster</p>';
+          pageEl.appendChild(empty);
+        }
+
+        pagesContainer.appendChild(pageEl);
+      }
+    }
+
+    updatePageNav();
+  }
+
+  function renderNormal(cfg) {
     const layout = Engine.computeLayout(cfg);
     const pages = Engine.paginate(images, layout);
     totalPages = pages.length;
@@ -1334,6 +1453,53 @@
     return btoa(binary);
   }
 
+  async function renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, col, row, dpi) {
+    var scale = dpi / 96;
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.round(pageW * scale);
+    canvas.height = Math.round(pageH * scale);
+    var ctx = canvas.getContext('2d');
+
+    // White background
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(scale, scale);
+
+    // Full poster dimensions
+    var fullW = pageW * posterCols;
+    var fullH = pageH * posterRows;
+
+    // Source region from original image for this page
+    var iw = imgEl.naturalWidth;
+    var ih = imgEl.naturalHeight;
+
+    // Cover: fill the full poster area
+    var imgRatio = iw / ih;
+    var posterRatio = fullW / fullH;
+    var sw, sh, sx, sy;
+    if (imgRatio > posterRatio) {
+      sh = ih;
+      sw = ih * posterRatio;
+      sx = (iw - sw) / 2;
+      sy = 0;
+    } else {
+      sw = iw;
+      sh = iw / posterRatio;
+      sx = 0;
+      sy = (ih - sh) / 2;
+    }
+
+    // This page's portion of the source
+    var pageSx = sx + (sw / posterCols) * col;
+    var pageSy = sy + (sh / posterRows) * row;
+    var pageSw = sw / posterCols;
+    var pageSh = sh / posterRows;
+
+    ctx.drawImage(imgEl, pageSx, pageSy, pageSw, pageSh, 0, 0, pageW, pageH);
+
+    return canvas;
+  }
+
   // -- Context Menu --
   var ctxTarget = null;
 
@@ -1470,8 +1636,6 @@
     if (!printer) { alert('Seleccione una impresora'); return; }
 
     var cfg = getConfig();
-    var layout = Engine.computeLayout(cfg);
-    var allPages = Engine.paginate(images, layout);
 
     // Show progress
     var btn = $('#btnPrint');
@@ -1481,16 +1645,45 @@
 
     try {
       var pageDataArray = [];
-      for (var pi = 0; pi < allPages.length; pi++) {
-        btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Pagina ' + (pi + 1) + '/' + allPages.length;
-        // yield to UI
-        await new Promise(function(r) { setTimeout(r, 10); });
-        var canvas = await renderPageToCanvas(allPages[pi].images, layout, cfg, PRINT_DPI);
-        var blob = await new Promise(function(resolve) {
-          canvas.toBlob(resolve, 'image/jpeg', 0.92);
-        });
-        var buf = await blob.arrayBuffer();
-        pageDataArray.push(arrayBufferToBase64(buf));
+
+      if (cfg.posterEnabled) {
+        // Poster mode: render each page segment
+        var unit = cfg.unit || 'cm';
+        var pageW = Engine.toPx(cfg.pageWidth, unit);
+        var pageH = Engine.toPx(cfg.pageHeight, unit);
+        var posterCols = Math.max(1, Math.min(4, cfg.posterCols));
+        var posterRows = Math.max(1, Math.min(4, cfg.posterRows));
+        var totalPosterPages = posterCols * posterRows;
+
+        var imgEl = await loadImageEl(images[0].src);
+
+        for (var pr = 0; pr < posterRows; pr++) {
+          for (var pc = 0; pc < posterCols; pc++) {
+            var pi = pr * posterCols + pc;
+            btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Pagina ' + (pi + 1) + '/' + totalPosterPages;
+            await new Promise(function(r) { setTimeout(r, 10); });
+            var canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, pc, pr, PRINT_DPI);
+            var blob = await new Promise(function(resolve) {
+              canvas.toBlob(resolve, 'image/jpeg', 0.92);
+            });
+            var buf = await blob.arrayBuffer();
+            pageDataArray.push(arrayBufferToBase64(buf));
+          }
+        }
+      } else {
+        var layout = Engine.computeLayout(cfg);
+        var allPages = Engine.paginate(images, layout);
+
+        for (var pi = 0; pi < allPages.length; pi++) {
+          btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Pagina ' + (pi + 1) + '/' + allPages.length;
+          await new Promise(function(r) { setTimeout(r, 10); });
+          var canvas = await renderPageToCanvas(allPages[pi].images, layout, cfg, PRINT_DPI);
+          var blob = await new Promise(function(resolve) {
+            canvas.toBlob(resolve, 'image/jpeg', 0.92);
+          });
+          var buf = await blob.arrayBuffer();
+          pageDataArray.push(arrayBufferToBase64(buf));
+        }
       }
 
       btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Enviando...';
@@ -1525,9 +1718,18 @@
 
     // Inject dynamic @page size based on current page dimensions
     var cfg = getConfig();
-    var layout = Engine.computeLayout(cfg);
-    var wMM = (layout.pageW / (96 / 25.4)).toFixed(1);
-    var hMM = (layout.pageH / (96 / 25.4)).toFixed(1);
+    var pageWPx, pageHPx;
+    if (cfg.posterEnabled) {
+      var unit = cfg.unit || 'cm';
+      pageWPx = Engine.toPx(cfg.pageWidth, unit);
+      pageHPx = Engine.toPx(cfg.pageHeight, unit);
+    } else {
+      var layout = Engine.computeLayout(cfg);
+      pageWPx = layout.pageW;
+      pageHPx = layout.pageH;
+    }
+    var wMM = (pageWPx / (96 / 25.4)).toFixed(1);
+    var hMM = (pageHPx / (96 / 25.4)).toFixed(1);
     var styleEl = document.createElement('style');
     styleEl.id = 'print-page-size';
     styleEl.textContent = '@page { size: ' + wMM + 'mm ' + hMM + 'mm; margin: 0; }';
@@ -1563,6 +1765,31 @@
   function updateMarginsVisibility() {
     var enabled = $('#marginsEnabled').checked;
     $('#marginsOptions').classList.toggle('hidden', !enabled);
+  }
+
+  // -- Poster Mode --
+  function updatePosterVisibility() {
+    var enabled = $('#posterEnabled').checked;
+    $('#posterOptions').classList.toggle('hidden', !enabled);
+    // Disable/enable layout sections when poster is active
+    var layoutSection = $('#layoutSection');
+    var marginsToggle = $('#marginsEnabled');
+    var cutGuidesToggle = $('#cutGuidesEnabled');
+    var spacingSection = document.querySelector('.spacing-row');
+    if (enabled) {
+      layoutSection.classList.add('poster-disabled');
+      $('#posterGridPreview').innerHTML = '<span>' + $('#posterCols').value + ' x ' + $('#posterRows').value + ' = ' + (parseInt($('#posterCols').value) * parseInt($('#posterRows').value)) + ' paginas</span>';
+    } else {
+      layoutSection.classList.remove('poster-disabled');
+    }
+  }
+
+  function updatePosterGridPreview() {
+    var cols = parseInt($('#posterCols').value) || 2;
+    var rows = parseInt($('#posterRows').value) || 2;
+    cols = Math.max(1, Math.min(4, cols));
+    rows = Math.max(1, Math.min(4, rows));
+    $('#posterGridPreview').innerHTML = '<span>' + cols + ' x ' + rows + ' = ' + (cols * rows) + ' paginas</span>';
   }
 
   // -- Orientation --
@@ -1619,7 +1846,6 @@
     if (prSel) prSel.addEventListener('change', function() { savedPrinter = prSel.value; saveConfig(); });
 
     // Page config modal
-    $('#btnPageConfig').addEventListener('click', openModal);
     $('#btnPageConfigPanel').addEventListener('click', openModal);
     $('#modalClose').addEventListener('click', closeModal);
     $('#modalAccept').addEventListener('click', closeModal);
@@ -1663,6 +1889,22 @@
 
     // Linked margins
     $('#btnLinkMargins').addEventListener('click', toggleMarginsLink);
+
+    // Poster mode
+    $('#posterEnabled').addEventListener('change', () => { updatePosterVisibility(); render(); saveConfig(); });
+    $('#posterCols').addEventListener('input', () => { updatePosterGridPreview(); render(); });
+    $('#posterCols').addEventListener('change', () => { updatePosterGridPreview(); render(); saveConfig(); });
+    $('#posterRows').addEventListener('input', () => { updatePosterGridPreview(); render(); });
+    $('#posterRows').addEventListener('change', () => { updatePosterGridPreview(); render(); saveConfig(); });
+    $('#btnPosterMode').addEventListener('click', function() {
+      var cb = $('#posterEnabled');
+      cb.checked = !cb.checked;
+      updatePosterVisibility();
+      render();
+      saveConfig();
+      // Visual feedback on toolbar button
+      $('#btnPosterMode').classList.toggle('tb-active', cb.checked);
+    });
     $('#marginTop').addEventListener('input', () => { onMarginChange('marginTop'); render(); });
     $('#marginTop').addEventListener('change', () => { onMarginChange('marginTop'); render(); saveConfig(); });
     $('#marginBottom').addEventListener('input', () => { onMarginChange('marginBottom'); render(); });
@@ -1840,6 +2082,7 @@
     updateLayoutModeVisibility();
     updateCaptionVisibility();
     updateMarginsVisibility();
+    updatePosterVisibility();
     updatePageSummary();
     setupDragDrop();
     setupPaste();
@@ -1856,6 +2099,8 @@
     render();
     zoomFit();
     loadPrinters();
+    // Poster button state
+    $('#btnPosterMode').classList.toggle('tb-active', $('#posterEnabled').checked);
   }
 
   function showToast(msg, duration) {

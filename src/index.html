@@ -27,8 +27,8 @@
     <button class="tb-btn" id="btnZoomIn" title="Acercar"><i class="bi bi-plus-lg"></i></button>
     <button class="tb-btn" id="btnZoomFit" title="Ajustar a ventana"><i class="bi bi-arrows-fullscreen"></i></button>
     <div class="tb-sep"></div>
-    <button class="tb-btn" id="btnPageConfig" title="Configuracion de pagina">
-      <i class="bi bi-file-earmark-ruled"></i> Pagina
+    <button class="tb-btn" id="btnPosterMode" title="Modo poster: una imagen en multiples paginas">
+      <i class="bi bi-easel"></i> Poster
     </button>
     <div class="tb-sep"></div>
     <select class="tb-select" id="printerSelect" title="Seleccionar impresora">
@@ -63,8 +63,36 @@
       </div>
     </div>
 
+    <!-- Poster Mode -->
+    <div class="panel-section" id="posterSection">
+      <div class="panel-section-title"><i class="bi bi-easel"></i> Modo Poster</div>
+      <div class="form-row">
+        <div class="toggle-row">
+          <label class="toggle">
+            <input type="checkbox" id="posterEnabled">
+            <span class="toggle-track"></span>
+          </label>
+          <span class="toggle-label">Activar modo poster</span>
+        </div>
+      </div>
+      <div id="posterOptions" class="hidden">
+        <div class="form-row">
+          <label>Una sola imagen dividida en multiples paginas</label>
+        </div>
+        <div class="form-row form-row-dual">
+          <div><label>Paginas horizontal</label><input type="number" class="fc" id="posterCols" value="2" min="1" max="4"></div>
+          <div><label>Paginas vertical</label><input type="number" class="fc" id="posterRows" value="2" min="1" max="4"></div>
+        </div>
+        <div class="form-row">
+          <div class="poster-grid-preview" id="posterGridPreview">
+            <span>2 x 2 = 4 paginas</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Layout -->
-    <div class="panel-section">
+    <div class="panel-section" id="layoutSection">
       <div class="panel-section-title"><i class="bi bi-grid-3x3"></i> Distribucion</div>
       <div class="form-row">
         <label>Modo</label>
