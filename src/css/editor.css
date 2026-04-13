@@ -886,7 +886,7 @@ input[type="range"].fc:focus { box-shadow: none; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
   html, body { margin: 0; padding: 0; width: 100%; height: auto; background: #fff; overflow: visible; }
   .editor-toolbar, .editor-panel, .drop-overlay, .page-number-badge, .page-nav,
-  .move-check, .resize-handle { display: none !important; }
+  .move-check, .resize-handle, .btn-print-page { display: none !important; }
   .editor-layout { display: block; height: auto; overflow: visible; }
   .editor-canvas-area { overflow: visible; background: #fff; padding: 0; margin: 0; }
   .canvas-scroll { padding: 0; overflow: visible; display: block; margin: 0; }
@@ -972,4 +972,31 @@ input[type="range"].fc:focus { box-shadow: none; }
   background: #e2e8f0;
   border: 1px solid var(--border);
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* -- Print Single Page Button -- */
+.btn-print-page {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: rgba(59,130,246,0.15);
+  color: var(--accent);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 20;
+}
+.print-page:hover .btn-print-page,
+.btn-print-page:focus { opacity: 1; }
+.btn-print-page:hover {
+  background: var(--accent);
+  color: #fff;
 }

@@ -673,6 +673,7 @@
     }
     updateRightPanelForMode();
     renderNormal(cfg);
+    updateInspector();
   }
 
   function renderPoster(cfg) {
@@ -705,6 +706,14 @@
         badge.className = 'page-number-badge';
         badge.textContent = '-- Poster ' + (pi + 1) + ' de ' + totalPages + ' (fila ' + (pr + 1) + ', col ' + (pc + 1) + ') --';
         pageEl.appendChild(badge);
+
+        var btnPrintPage = document.createElement('button');
+        btnPrintPage.className = 'btn-print-page';
+        btnPrintPage.title = 'Imprimir solo esta pagina';
+        btnPrintPage.innerHTML = '<i class="bi bi-printer"></i>';
+        btnPrintPage.dataset.page = pi;
+        btnPrintPage.addEventListener('click', function(ev) { ev.stopPropagation(); printSinglePage(parseInt(this.dataset.page)); });
+        pageEl.appendChild(btnPrintPage);
 
         if (img) {
           var imgEl = document.createElement('img');
@@ -785,7 +794,7 @@
 
     // Grid lines overlay
     var gridOverlay = document.createElement('div');
-    gridOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;';
+    gridOverlay.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;';
 
     // Vertical lines
     for (var c = 1; c < posterCols; c++) {
@@ -806,7 +815,7 @@
         var pageNum = pr * posterCols + pc + 1;
         var label = document.createElement('div');
         var isActive = (pr * posterCols + pc) === currentPage;
-        label.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;' +
+        label.style.cssText = 'position:absolute;display:flex;align-items:center;justify-content:center;cursor:pointer;' +
           'font-size:' + Math.max(10, Math.min(16, cellW / 3)) + 'px;font-weight:700;' +
           'color:' + (isActive ? '#3b82f6' : 'rgba(255,255,255,0.9)') + ';' +
           'text-shadow:0 1px 3px rgba(0,0,0,0.7);' +
@@ -814,6 +823,8 @@
           'width:' + cellW + 'px;height:' + cellH + 'px;' +
           (isActive ? 'background:rgba(59,130,246,0.15);border:2px solid rgba(59,130,246,0.5);box-sizing:border-box;' : '');
         label.textContent = pageNum;
+        label.dataset.page = pr * posterCols + pc;
+        label.addEventListener('click', function() { goToPage(parseInt(this.dataset.page)); });
         gridOverlay.appendChild(label);
       }
     }
@@ -827,12 +838,16 @@
 
   function updateRightPanelForMode() {
     var posterEnabled = $('#posterEnabled').checked;
-    // Hide normal inspector content, show poster preview (or vice versa)
-    $('#inspectorEmpty').classList.toggle('hidden', posterEnabled);
-    $('#inspectorContent').classList.add('hidden');
     var posterPanel = $('#posterPreviewPanel');
-    if (posterPanel) {
-      posterPanel.classList.toggle('hidden', !posterEnabled);
+    if (posterEnabled) {
+      // Poster mode: hide inspector, show poster preview
+      $('#inspectorEmpty').classList.add('hidden');
+      $('#inspectorContent').classList.add('hidden');
+      if (posterPanel) posterPanel.classList.remove('hidden');
+    } else {
+      // Normal mode: hide poster preview, restore inspector based on selection
+      if (posterPanel) posterPanel.classList.add('hidden');
+      // Don't touch inspectorEmpty/inspectorContent here — updateInspector handles it
     }
     // Update panel header
     var panelHeader = $('#panelRight').querySelector('.panel-header');
@@ -864,6 +879,14 @@
       badge.className = 'page-number-badge';
       badge.textContent = '-- Pagina ' + (pi + 1) + ' de ' + totalPages + ' --';
       pageEl.appendChild(badge);
+
+      var btnPrintPage = document.createElement('button');
+      btnPrintPage.className = 'btn-print-page';
+      btnPrintPage.title = 'Imprimir solo esta pagina';
+      btnPrintPage.innerHTML = '<i class="bi bi-printer"></i>';
+      btnPrintPage.dataset.page = pi;
+      btnPrintPage.addEventListener('click', function(ev) { ev.stopPropagation(); printSinglePage(parseInt(this.dataset.page)); });
+      pageEl.appendChild(btnPrintPage);
 
       const content = document.createElement('div');
       content.className = 'page-content';
@@ -1730,6 +1753,61 @@
     render();
   }
 
+  // -- Print Single Page --
+  async function printSinglePage(pageIndex) {
+    if (!images.length) { alert('No hay imagenes para imprimir'); return; }
+    if (!window.__TAURI__) { alert('Impresión individual solo disponible en la app de escritorio'); return; }
+
+    var sel = $('#printerSelect');
+    var printer = sel ? sel.value : '';
+    if (!printer) { alert('Seleccione una impresora'); return; }
+
+    var cfg = getConfig();
+    var btn = $('#btnPrint');
+    var origText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Pagina ' + (pageIndex + 1) + '...';
+
+    try {
+      var canvas;
+      if (cfg.posterEnabled) {
+        var unit = cfg.unit || 'cm';
+        var pageW = Engine.toPx(cfg.pageWidth, unit);
+        var pageH = Engine.toPx(cfg.pageHeight, unit);
+        var posterCols = Math.max(1, Math.min(4, cfg.posterCols));
+        var posterRows = Math.max(1, Math.min(4, cfg.posterRows));
+        var col = pageIndex % posterCols;
+        var row = Math.floor(pageIndex / posterCols);
+        var imgEl = await loadImageEl(images[0].src);
+        canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, col, row, PRINT_DPI);
+      } else {
+        var layout = Engine.computeLayout(cfg);
+        var allPages = Engine.paginate(images, layout);
+        if (pageIndex >= allPages.length) { btn.disabled = false; btn.innerHTML = origText; return; }
+        canvas = await renderPageToCanvas(allPages[pageIndex].images, layout, cfg, PRINT_DPI);
+      }
+
+      var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.92); });
+      var buf = await blob.arrayBuffer();
+      var pageData = arrayBufferToBase64(buf);
+
+      btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Enviando...';
+      await new Promise(function(r) { setTimeout(r, 10); });
+
+      await window.__TAURI__.core.invoke('print_pages', {
+        request: { printer: printer, copies: 1, pages: [pageData] }
+      });
+    } catch (e) {
+      alert('Error al imprimir: ' + e);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = origText;
+    }
+
+    savedPrinter = printer;
+    saveConfig();
+  }
+
   // -- Native Print (GDI) --
   async function printNative() {
     if (!images.length) { alert('No hay imagenes para imprimir'); return; }
@@ -2039,8 +2117,11 @@
     inspInputs.split(',').forEach(sel => {
       const el = $(sel);
       if (!el) return;
-      el.addEventListener('change', applyInspector);
-      el.addEventListener('input', applyInspector);
+      if (el.tagName === 'SELECT' || el.type === 'checkbox' || el.type === 'color') {
+        el.addEventListener('change', applyInspector);
+      } else {
+        el.addEventListener('input', applyInspector);
+      }
     });
     // Rotation buttons
     $('#inspRotateLeft').addEventListener('click', function() {
