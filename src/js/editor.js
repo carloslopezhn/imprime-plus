@@ -341,34 +341,45 @@
     });
   }
 
+  var _insertAtPage = -1;
+
   function addImageAtPage(pageIndex) {
-    var input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = function() {
-      if (!input.files || !input.files.length) return;
-      var file = input.files[0];
-      var reader = new FileReader();
-      reader.onload = function(e) {
-        var layout = Engine.computeLayout(gatherConfig());
-        var pages = Engine.paginate(images, layout);
-        var insertIndex = 0;
-        for (var p = 0; p <= pageIndex && p < pages.length; p++) {
-          insertIndex += pages[p].images.length;
-        }
-        if (pageIndex >= pages.length) insertIndex = images.length;
-        images.splice(insertIndex, 0, {
-          id: ++idCounter,
-          src: e.target.result,
-          name: file.name.replace(/\.[^.]+$/, ''),
-          caption: '',
-          overrides: {},
-        });
-        render();
-      };
-      reader.readAsDataURL(file);
-    };
-    input.click();
+    _insertAtPage = pageIndex;
+    fileInput.click();
+  }
+
+  function handleFileInputChange() {
+    if (_insertAtPage >= 0) {
+      var pi = _insertAtPage;
+      _insertAtPage = -1;
+      var files = Array.from(fileInput.files).filter(function(f) { return f.type.startsWith('image/'); });
+      if (!files.length) { fileInput.value = ''; return; }
+      var layout = Engine.computeLayout(gatherConfig());
+      var pages = Engine.paginate(images, layout);
+      var insertIndex = 0;
+      for (var p = 0; p <= pi && p < pages.length; p++) {
+        insertIndex += pages[p].images.length;
+      }
+      if (pi >= pages.length) insertIndex = images.length;
+      files.forEach(function(file, fi) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          images.splice(insertIndex + fi, 0, {
+            id: ++idCounter,
+            src: e.target.result,
+            name: file.name.replace(/\.[^.]+$/, ''),
+            caption: '',
+            overrides: {},
+          });
+          render();
+        };
+        reader.readAsDataURL(file);
+      });
+      fileInput.value = '';
+    } else {
+      addImageFiles(fileInput.files);
+      fileInput.value = '';
+    }
   }
 
   function addImageFromClipboard(blob) {
@@ -2030,7 +2041,7 @@
   function bindEvents() {
     // Toolbar
     $('#btnAddImages').addEventListener('click', () => fileInput.click());
-    fileInput.addEventListener('change', () => { addImageFiles(fileInput.files); fileInput.value = ''; });
+    fileInput.addEventListener('change', handleFileInputChange);
     $('#btnPaste').addEventListener('click', async () => {
       try {
         const items = await navigator.clipboard.read();
