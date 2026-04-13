@@ -21,6 +21,9 @@
   let moveModeId = null;
   let moveTimer = null;
 
+  function imageCount() { return images.filter(function(i) { return i !== null; }).length; }
+  function trimTrailingNulls() { while (images.length > 0 && images[images.length - 1] === null) images.pop(); }
+
   // -- DOM refs --
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => document.querySelectorAll(s);
@@ -309,7 +312,7 @@
     // Poster mode: only one image allowed, take the first
     if ($('#posterEnabled').checked) {
       filesToProcess = [filesToProcess[0]];
-      if (images.length > 0) {
+      if (imageCount() > 0) {
         showToast('Modo poster: reemplazando imagen');
       }
     }
@@ -341,35 +344,208 @@
     });
   }
 
-  var _insertAtPage = -1;
+  var _insertAtSlot = -1;
 
-  function addImageAtPage(pageIndex) {
-    _insertAtPage = pageIndex;
+  function createPlacementGrid(cols, rows) {
+    var grid = [];
+    for (var r = 0; r < rows; r++) grid.push(new Array(cols).fill(false));
+    return grid;
+  }
+
+  function placeInGrid(grid, cols, rows, cs, rs) {
+    for (var r = 0; r <= rows - rs; r++) {
+      for (var c = 0; c <= cols - cs; c++) {
+        var fits = true;
+        for (var dr = 0; dr < rs && fits; dr++) {
+          for (var dc = 0; dc < cs && fits; dc++) {
+            if (grid[r + dr][c + dc]) fits = false;
+          }
+        }
+        if (!fits) continue;
+        for (var dr2 = 0; dr2 < rs; dr2++) {
+          for (var dc2 = 0; dc2 < cs; dc2++) {
+            grid[r + dr2][c + dc2] = true;
+          }
+        }
+        return { row: r, col: c };
+      }
+    }
+    return null;
+  }
+
+  function buildPlacementMeta(layout, srcImages) {
+    var pages = Engine.paginate(srcImages, layout);
+    var pageSize = layout.totalSlots;
+    var cols = layout.cols;
+    var rows = layout.rows;
+    var baseIndex = 0;
+    var result = { pages: [], byId: {} };
+
+    pages.forEach(function(page, pi) {
+      var grid = createPlacementGrid(cols, rows);
+      var slotMap = new Array(pageSize).fill(null).map(function() { return { type: 'empty', item: null }; });
+      var items = [];
+
+      for (var li = 0; li < page.images.length; li++) {
+        var img = page.images[li];
+        var ov = img ? (img.overrides || {}) : {};
+        var cs = img ? Math.min(ov.colSpan || 1, cols) : 1;
+        var rs = img ? Math.min(ov.rowSpan || 1, rows) : 1;
+        var pos = placeInGrid(grid, cols, rows, cs, rs);
+        if (!pos) continue;
+
+        var globalIndex = baseIndex + li;
+        var startSlot = pos.row * cols + pos.col;
+        var item = {
+          img: img,
+          globalIndex: globalIndex,
+          pageIndex: pi,
+          row: pos.row,
+          col: pos.col,
+          cs: cs,
+          rs: rs,
+          slot: startSlot,
+        };
+        items.push(item);
+        if (img && img.id !== undefined && img.id !== null) result.byId[img.id] = item;
+
+        for (var dr = 0; dr < rs; dr++) {
+          for (var dc = 0; dc < cs; dc++) {
+            var slot = (pos.row + dr) * cols + (pos.col + dc);
+            slotMap[slot] = { type: (dr === 0 && dc === 0) ? 'start' : 'covered', item: item };
+          }
+        }
+      }
+
+      result.pages.push({
+        pageIndex: pi,
+        baseIndex: baseIndex,
+        pageLength: page.images.length,
+        items: items,
+        slotMap: slotMap,
+      });
+      baseIndex += page.images.length;
+    });
+
+    return result;
+  }
+
+  function simulateInsertedImageSlot(layout, insertIndex, nullCount) {
+    var marker = { __marker: true };
+    var seq = [];
+    for (var i = 0; i <= images.length; i++) {
+      if (i === insertIndex) {
+        for (var n = 0; n < nullCount; n++) seq.push(null);
+        seq.push(marker);
+      }
+      if (i < images.length) seq.push(images[i]);
+    }
+
+    var cols = layout.cols;
+    var rows = layout.rows;
+    var perPage = layout.perPage;
+    var pageSize = layout.totalSlots;
+    var pageIndex = 0;
+    var pageCount = 0;
+    var grid = createPlacementGrid(cols, rows);
+
+    for (var s = 0; s < seq.length; s++) {
+      var item = seq[s];
+      var ov = (item && item !== marker) ? (item.overrides || {}) : {};
+      var cs = (item && item !== marker) ? Math.min(ov.colSpan || 1, cols) : 1;
+      var rs = (item && item !== marker) ? Math.min(ov.rowSpan || 1, rows) : 1;
+      var countFull = (perPage < cols * rows) && (pageCount >= perPage);
+      var pos = countFull ? null : placeInGrid(grid, cols, rows, cs, rs);
+      if (!pos) {
+        pageIndex++;
+        pageCount = 0;
+        grid = createPlacementGrid(cols, rows);
+        pos = placeInGrid(grid, cols, rows, cs, rs);
+        if (!pos) return -1;
+      }
+      if (item === marker) {
+        return pageIndex * pageSize + (pos.row * cols + pos.col);
+      }
+      pageCount++;
+    }
+    return -1;
+  }
+
+  function findInsertPlanForSlot(targetSlot, layout) {
+    var pageSize = layout.totalSlots;
+    var pageIndex = Math.floor(targetSlot / pageSize);
+    var slotInPage = targetSlot % pageSize;
+    var meta = buildPlacementMeta(layout, images);
+    var pageMeta = meta.pages[pageIndex];
+    if (!pageMeta) {
+      return { replaceIndex: -1, insertIndex: images.length, padNulls: 0 };
+    }
+
+    var cell = pageMeta.slotMap[slotInPage];
+    if (cell && cell.type === 'start' && cell.item && cell.item.img === null) {
+      return { replaceIndex: cell.item.globalIndex, insertIndex: -1, padNulls: 0 };
+    }
+    if (cell && cell.type !== 'empty') {
+      return null;
+    }
+
+    var nextItem = null;
+    pageMeta.items.forEach(function(it) {
+      if (it.slot > slotInPage && (!nextItem || it.slot < nextItem.slot)) nextItem = it;
+    });
+    var insertIndex = nextItem ? nextItem.globalIndex : (pageMeta.baseIndex + pageMeta.pageLength);
+
+    for (var pad = 0; pad <= pageSize; pad++) {
+      var simulatedSlot = simulateInsertedImageSlot(layout, insertIndex, pad);
+      if (simulatedSlot === targetSlot) {
+        return { replaceIndex: -1, insertIndex: insertIndex, padNulls: pad };
+      }
+    }
+
+    return { replaceIndex: -1, insertIndex: insertIndex, padNulls: 0 };
+  }
+
+  function insertImageAtSlot(targetSlot, newImg, layout) {
+    var plan = findInsertPlanForSlot(targetSlot, layout);
+    if (!plan) return false;
+    if (plan.replaceIndex >= 0) {
+      images[plan.replaceIndex] = newImg;
+      return true;
+    }
+
+    var add = [];
+    for (var i = 0; i < plan.padNulls; i++) add.push(null);
+    add.push(newImg);
+    images.splice.apply(images, [plan.insertIndex, 0].concat(add));
+    return true;
+  }
+
+  function addImageAtCell(slotIndex) {
+    _insertAtSlot = slotIndex;
     fileInput.click();
   }
 
   function handleFileInputChange() {
-    if (_insertAtPage >= 0) {
-      var pi = _insertAtPage;
-      _insertAtPage = -1;
+    if (_insertAtSlot >= 0) {
+      var targetSlot = _insertAtSlot;
+      _insertAtSlot = -1;
       var file = fileInput.files && fileInput.files[0];
       if (!file || !file.type.startsWith('image/')) { fileInput.value = ''; return; }
       var reader = new FileReader();
       reader.onload = function(e) {
-        var layout = Engine.computeLayout(getConfig());
-        var pages = Engine.paginate(images, layout);
-        var insertIndex = 0;
-        for (var p = 0; p <= pi && p < pages.length; p++) {
-          insertIndex += pages[p].images.length;
-        }
-        if (pi >= pages.length) insertIndex = images.length;
-        images.splice(insertIndex, 0, {
+        var cfg = getConfig();
+        var layout = Engine.computeLayout(cfg);
+        var newImg = {
           id: ++idCounter,
           src: e.target.result,
           name: file.name.replace(/\.[^.]+$/, ''),
           caption: '',
           overrides: {},
-        });
+        };
+        if (!insertImageAtSlot(targetSlot, newImg, layout)) {
+          images.push(newImg);
+        }
+        trimTrailingNulls();
         fileInput.value = '';
         render();
       };
@@ -408,7 +584,7 @@
   }
 
   function removeImage(id) {
-    images = images.filter(img => img.id !== id);
+    images = images.filter(function(img) { return img !== null && img.id !== id; });
     selectedIds.delete(id);
     updateInspector();
     render();
@@ -416,7 +592,7 @@
 
   function removeSelectedImages() {
     if (!selectedIds.size) return;
-    images = images.filter(function(img) { return !selectedIds.has(img.id); });
+    images = images.filter(function(img) { return img !== null && !selectedIds.has(img.id); });
     selectedIds.clear();
     updateInspector();
     render();
@@ -461,7 +637,7 @@
     if (multiEl) multiEl.classList.add('hidden');
 
     var singleId = selectedIds.size === 1 ? selectedIds.values().next().value : null;
-    const img = singleId ? images.find(function(i) { return i.id === singleId; }) : null;
+    const img = singleId ? images.find(function(i) { return i !== null && i.id === singleId; }) : null;
     if (!img) {
       $('#inspectorEmpty').classList.remove('hidden');
       $('#inspectorContent').classList.add('hidden');
@@ -505,7 +681,7 @@
 
   function applyInspector() {
     var singleId = selectedIds.size === 1 ? selectedIds.values().next().value : null;
-    const img = singleId ? images.find(function(i) { return i.id === singleId; }) : null;
+    const img = singleId ? images.find(function(i) { return i !== null && i.id === singleId; }) : null;
     if (!img) return;
     const cfg = getConfig();
 
@@ -662,7 +838,7 @@
   // -- Page Navigation --
   function updatePageNav() {
     $('#pageNavLabel').textContent = 'Pagina ' + (currentPage + 1) + ' de ' + totalPages;
-    const imgCount = images.length;
+    const imgCount = imageCount();
     const cfg = getConfig();
     if (cfg.posterEnabled) {
       $('#pageNavTotal').textContent = imgCount > 0 ? '(poster ' + cfg.posterCols + 'x' + cfg.posterRows + ')' : '';
@@ -724,7 +900,7 @@
     totalPages = posterCols * posterRows;
 
     // Use only the first image
-    const img = images.length > 0 ? images[0] : null;
+    const img = images.find(function(i) { return i !== null; }) || null;
 
     if (currentPage >= totalPages) currentPage = totalPages - 1;
     if (currentPage < 0) currentPage = 0;
@@ -796,7 +972,7 @@
     var info = $('#posterPreviewInfo');
     if (!container) return;
 
-    var img = images.length > 0 ? images[0] : null;
+    var img = images.find(function(i) { return i !== null; }) || null;
     var posterCols = Math.max(1, Math.min(4, cfg.posterCols));
     var posterRows = Math.max(1, Math.min(4, cfg.posterRows));
 
@@ -952,6 +1128,7 @@
       var emptyCells = Math.max(0, layout.totalSlots - occupiedCells);
       var totalCells = page.images.length + emptyCells;
 
+      var placementGrid = createPlacementGrid(layout.cols, layout.rows);
       for (let i = 0; i < totalCells; i++) {
         const img = i < page.images.length ? page.images[i] : null;
         const cellEl = document.createElement('div');
@@ -972,6 +1149,13 @@
         var rs = (img && ov.rowSpan > 1) ? Math.min(ov.rowSpan, layout.rows) : 1;
         const cw = layout.cellW * cs + layout.spacingH * (cs - 1);
         const ch = layout.cellH * rs + layout.spacingV * (rs - 1);
+        var pos = placeInGrid(placementGrid, layout.cols, layout.rows, cs, rs);
+        if (!pos) continue;
+        var slotInPage = pos.row * layout.cols + pos.col;
+        var slotAbs = pi * layout.totalSlots + slotInPage;
+
+        cellEl.style.gridColumnStart = String(pos.col + 1);
+        cellEl.style.gridRowStart = String(pos.row + 1);
 
         if (cs > 1) cellEl.style.gridColumn = 'span ' + cs;
         if (rs > 1) cellEl.style.gridRow = 'span ' + rs;
@@ -1150,11 +1334,12 @@
           cellEl.classList.add('img-cell-empty');
           cellEl.style.cursor = 'pointer';
           cellEl.title = 'Clic para agregar imagen';
-          (function(pageIndex) {
-            cellEl.addEventListener('click', function() {
-              addImageAtPage(pageIndex);
+          (function(targetSlot) {
+            cellEl.addEventListener('click', function(ev) {
+              ev.stopPropagation();
+              addImageAtCell(targetSlot);
             });
-          })(pi);
+          })(slotAbs);
         }
 
         // Cut guides (crop marks at each corner)
@@ -1286,7 +1471,7 @@
 
   // -- Clear All / Clear Config --
   function clearAll() {
-    if (!images.length) return;
+    if (!imageCount()) return;
     if (!confirm('Vaciar todo? Se eliminaran todas las imagenes y sus configuraciones individuales.')) return;
     images = [];
     selectedIds.clear();
@@ -1297,8 +1482,9 @@
   }
 
   function clearConfig() {
-    if (!images.length) return;
+    if (!imageCount()) return;
     images.forEach(function(img) {
+      if (!img) return;
       img.overrides = {};
       img.caption = '';
     });
@@ -1707,7 +1893,7 @@
 
   function ctxDuplicate() {
     if (!ctxTarget) return;
-    var idx = images.findIndex(function(im) { return im.id === ctxTarget.id; });
+    var idx = images.findIndex(function(im) { return im !== null && im.id === ctxTarget.id; });
     if (idx === -1) return;
     var clone = {
       id: ++idCounter,
@@ -1722,9 +1908,10 @@
 
   function ctxClear() {
     if (!ctxTarget) return;
-    var idx = images.findIndex(function(im) { return im.id === ctxTarget.id; });
+    var idx = images.findIndex(function(im) { return im !== null && im.id === ctxTarget.id; });
     if (idx === -1) return;
     images.splice(idx, 1);
+    trimTrailingNulls();
     selectedIds.delete(ctxTarget.id);
     updateInspector();
     render();
@@ -1759,23 +1946,50 @@
 
   function moveImageByArrow(direction) {
     if (moveModeId === null) return false;
-    var idx = images.findIndex(function(im) { return im.id === moveModeId; });
-    if (idx === -1) { exitMoveMode(); return false; }
     var cfg = getConfig();
     var layout = Engine.computeLayout(cfg);
-    var cols = layout.cols;
-    var targetIdx = -1;
-    if (direction === 'ArrowRight' && idx < images.length - 1) targetIdx = idx + 1;
-    else if (direction === 'ArrowLeft' && idx > 0) targetIdx = idx - 1;
-    else if (direction === 'ArrowDown' && idx + cols < images.length) targetIdx = idx + cols;
-    else if (direction === 'ArrowUp' && idx - cols >= 0) targetIdx = idx - cols;
-    if (targetIdx >= 0 && targetIdx < images.length) {
-      var temp = images[idx];
-      images[idx] = images[targetIdx];
-      images[targetIdx] = temp;
-      resetMoveTimer();
-      render();
+    var meta = buildPlacementMeta(layout, images);
+    var item = meta.byId[moveModeId];
+    if (!item) { exitMoveMode(); return false; }
+
+    if (item.cs > 1 || item.rs > 1) {
+      showToast('Mover con flechas por ahora soporta imagenes 1x1', 1600);
+      return true;
     }
+
+    var cols = layout.cols;
+    var rows = layout.rows;
+    var tr = item.row;
+    var tc = item.col;
+    if (direction === 'ArrowRight') tc++;
+    else if (direction === 'ArrowLeft') tc--;
+    else if (direction === 'ArrowDown') tr++;
+    else if (direction === 'ArrowUp') tr--;
+
+    if (tc < 0 || tc >= cols || tr < 0 || tr >= rows) return true;
+
+    var targetSlotInPage = tr * cols + tc;
+    var pageMeta = meta.pages[item.pageIndex];
+    var targetCell = pageMeta ? pageMeta.slotMap[targetSlotInPage] : null;
+    if (!targetCell || targetCell.type === 'covered') return true;
+
+    if (targetCell.type === 'start' && targetCell.item && targetCell.item.globalIndex !== item.globalIndex) {
+      var temp = images[item.globalIndex];
+      images[item.globalIndex] = images[targetCell.item.globalIndex];
+      images[targetCell.item.globalIndex] = temp;
+    } else {
+      var movingImg = images[item.globalIndex];
+      images[item.globalIndex] = null;
+      var targetSlotAbs = item.pageIndex * layout.totalSlots + targetSlotInPage;
+      if (!insertImageAtSlot(targetSlotAbs, movingImg, layout)) {
+        images[item.globalIndex] = movingImg;
+        return true;
+      }
+    }
+
+    trimTrailingNulls();
+    resetMoveTimer();
+    render();
     return true;
   }
 
@@ -1801,7 +2015,7 @@
 
   // -- Print Single Page --
   async function printSinglePage(pageIndex) {
-    if (!images.length) { alert('No hay imagenes para imprimir'); return; }
+    if (!imageCount()) { alert('No hay imagenes para imprimir'); return; }
     if (!window.__TAURI__) { alert('Impresión individual solo disponible en la app de escritorio'); return; }
 
     var sel = $('#printerSelect');
@@ -1856,7 +2070,7 @@
 
   // -- Native Print (GDI) --
   async function printNative() {
-    if (!images.length) { alert('No hay imagenes para imprimir'); return; }
+    if (!imageCount()) { alert('No hay imagenes para imprimir'); return; }
 
     var sel = $('#printerSelect');
     var printer = sel ? sel.value : '';
@@ -2005,7 +2219,7 @@
       $('#posterGridPreview').innerHTML = '<span>' + $('#posterCols').value + ' x ' + $('#posterRows').value + ' = ' + (parseInt($('#posterCols').value) * parseInt($('#posterRows').value)) + ' paginas</span>';
       // Trim to first image only
       if (images.length > 1) {
-        images = [images[0]];
+        images = images.filter(function(i) { return i !== null; }).slice(0, 1);
         selectedIds.clear();
         currentPage = 0;
         showToast('Modo poster: solo se conserva la primera imagen');
@@ -2172,14 +2386,14 @@
     // Rotation buttons
     $('#inspRotateLeft').addEventListener('click', function() {
       selectedIds.forEach(function(sid) {
-        var im = images.find(function(i) { return i.id === sid; });
+        var im = images.find(function(i) { return i !== null && i.id === sid; });
         if (im) im.overrides.rotation = ((im.overrides.rotation || 0) - 90 + 360) % 360;
       });
       updateInspector(); render();
     });
     $('#inspRotateRight').addEventListener('click', function() {
       selectedIds.forEach(function(sid) {
-        var im = images.find(function(i) { return i.id === sid; });
+        var im = images.find(function(i) { return i !== null && i.id === sid; });
         if (im) im.overrides.rotation = ((im.overrides.rotation || 0) + 90) % 360;
       });
       updateInspector(); render();
@@ -2254,7 +2468,7 @@
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size && !isInput) { e.preventDefault(); removeSelectedImages(); }
       if ((e.key === 'r' || e.key === 'R') && selectedIds.size && !e.ctrlKey && !isInput) {
         selectedIds.forEach(function(sid) {
-          var rImg = images.find(function(i) { return i.id === sid; });
+          var rImg = images.find(function(i) { return i !== null && i.id === sid; });
           if (rImg) rImg.overrides.rotation = ((rImg.overrides.rotation || 0) + 90) % 360;
         });
         updateInspector(); render();
