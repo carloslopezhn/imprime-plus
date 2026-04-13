@@ -356,7 +356,7 @@
       if (!file || !file.type.startsWith('image/')) { fileInput.value = ''; return; }
       var reader = new FileReader();
       reader.onload = function(e) {
-        var layout = Engine.computeLayout(gatherConfig());
+        var layout = Engine.computeLayout(getConfig());
         var pages = Engine.paginate(images, layout);
         var insertIndex = 0;
         for (var p = 0; p <= pi && p < pages.length; p++) {
