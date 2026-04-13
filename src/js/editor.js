@@ -352,30 +352,28 @@
     if (_insertAtPage >= 0) {
       var pi = _insertAtPage;
       _insertAtPage = -1;
-      var files = Array.from(fileInput.files).filter(function(f) { return f.type.startsWith('image/'); });
-      if (!files.length) { fileInput.value = ''; return; }
-      var layout = Engine.computeLayout(gatherConfig());
-      var pages = Engine.paginate(images, layout);
-      var insertIndex = 0;
-      for (var p = 0; p <= pi && p < pages.length; p++) {
-        insertIndex += pages[p].images.length;
-      }
-      if (pi >= pages.length) insertIndex = images.length;
-      files.forEach(function(file, fi) {
-        var reader = new FileReader();
-        reader.onload = function(e) {
-          images.splice(insertIndex + fi, 0, {
-            id: ++idCounter,
-            src: e.target.result,
-            name: file.name.replace(/\.[^.]+$/, ''),
-            caption: '',
-            overrides: {},
-          });
-          render();
-        };
-        reader.readAsDataURL(file);
-      });
-      fileInput.value = '';
+      var file = fileInput.files && fileInput.files[0];
+      if (!file || !file.type.startsWith('image/')) { fileInput.value = ''; return; }
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var layout = Engine.computeLayout(gatherConfig());
+        var pages = Engine.paginate(images, layout);
+        var insertIndex = 0;
+        for (var p = 0; p <= pi && p < pages.length; p++) {
+          insertIndex += pages[p].images.length;
+        }
+        if (pi >= pages.length) insertIndex = images.length;
+        images.splice(insertIndex, 0, {
+          id: ++idCounter,
+          src: e.target.result,
+          name: file.name.replace(/\.[^.]+$/, ''),
+          caption: '',
+          overrides: {},
+        });
+        fileInput.value = '';
+        render();
+      };
+      reader.readAsDataURL(file);
     } else {
       addImageFiles(fileInput.files);
       fileInput.value = '';
