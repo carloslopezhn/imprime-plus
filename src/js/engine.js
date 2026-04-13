@@ -152,8 +152,6 @@ const Engine = (function () {
   function getShapeClip(shape) {
     switch (shape) {
       case 'circle': return 'circle(50% at 50% 50%)';
-      case 'hexagon': return 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)';
-      case 'star': return 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)';
       default: return 'none';
     }
   }

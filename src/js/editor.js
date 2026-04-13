@@ -341,6 +341,36 @@
     });
   }
 
+  function addImageAtPage(pageIndex) {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = function() {
+      if (!input.files || !input.files.length) return;
+      var file = input.files[0];
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        var layout = Engine.computeLayout(gatherConfig());
+        var pages = Engine.paginate(images, layout);
+        var insertIndex = 0;
+        for (var p = 0; p <= pageIndex && p < pages.length; p++) {
+          insertIndex += pages[p].images.length;
+        }
+        if (pageIndex >= pages.length) insertIndex = images.length;
+        images.splice(insertIndex, 0, {
+          id: ++idCounter,
+          src: e.target.result,
+          name: file.name.replace(/\.[^.]+$/, ''),
+          caption: '',
+          overrides: {},
+        });
+        render();
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
   function addImageFromClipboard(blob) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1109,6 +1139,13 @@
           });
         } else {
           cellEl.classList.add('img-cell-empty');
+          cellEl.style.cursor = 'pointer';
+          cellEl.title = 'Doble clic para agregar imagen';
+          (function(pageIndex) {
+            cellEl.addEventListener('dblclick', function() {
+              addImageAtPage(pageIndex);
+            });
+          })(pi);
         }
 
         // Cut guides (crop marks at each corner)
