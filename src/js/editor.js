@@ -1149,9 +1149,9 @@
         } else {
           cellEl.classList.add('img-cell-empty');
           cellEl.style.cursor = 'pointer';
-          cellEl.title = 'Doble clic para agregar imagen';
+          cellEl.title = 'Clic para agregar imagen';
           (function(pageIndex) {
-            cellEl.addEventListener('dblclick', function() {
+            cellEl.addEventListener('click', function() {
               addImageAtPage(pageIndex);
             });
           })(pi);
