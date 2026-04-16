@@ -35,13 +35,62 @@
 
   // -- Builtin presets --
   const BUILTIN_PRESETS = [
-    { id: 'letter', name: 'Carta', width: 21.59, height: 27.94, unit: 'cm', builtin: true },
-    { id: 'legal',  name: 'Legal', width: 21.59, height: 35.56, unit: 'cm', builtin: true },
-    { id: 'a4',     name: 'A4',    width: 21.0,  height: 29.7,  unit: 'cm', builtin: true },
-    { id: 'a5',     name: 'A5',    width: 14.8,  height: 21.0,  unit: 'cm', builtin: true },
-    { id: '4x6',    name: '4x6 pulg', width: 4, height: 6, unit: 'in', builtin: true },
-    { id: '5x7',    name: '5x7 pulg', width: 5, height: 7, unit: 'in', builtin: true },
+    { id: 'letter',  name: 'Carta (Letter)',  width: 8.5,  height: 11,   unit: 'in', builtin: true },
+    { id: 'oficio',  name: 'Oficio',          width: 8.5,  height: 13,   unit: 'in', builtin: true },
+    { id: 'legal',   name: 'Legal',           width: 8.5,  height: 14,   unit: 'in', builtin: true },
+    { id: 'tabloid', name: 'Tabloide',        width: 11,   height: 17,   unit: 'in', builtin: true },
+    { id: 'a3',      name: 'A3',              width: 29.7, height: 42.0, unit: 'cm', builtin: true },
+    { id: 'a4',      name: 'A4',              width: 21.0, height: 29.7, unit: 'cm', builtin: true },
+    { id: 'a5',      name: 'A5',              width: 14.8, height: 21.0, unit: 'cm', builtin: true },
+    { id: '4x6',     name: '4x6 (Postal)',    width: 4,    height: 6,    unit: 'in', builtin: true },
+    { id: '5x7',     name: '5x7',             width: 5,    height: 7,    unit: 'in', builtin: true },
+    { id: '8x10',    name: '8x10',            width: 8,    height: 10,   unit: 'in', builtin: true },
   ];
+
+  // -- Unit conversion --
+  var currentUnit = 'cm';
+  function convertUnit(value, fromUnit, toUnit) {
+    if (fromUnit === toUnit || !value) return value;
+    // Convert to cm first
+    var cm;
+    if (fromUnit === 'cm') cm = value;
+    else if (fromUnit === 'in') cm = value * 2.54;
+    else if (fromUnit === 'mm') cm = value * 0.1;
+    else cm = value;
+    // Convert from cm to target
+    var result;
+    if (toUnit === 'cm') result = cm;
+    else if (toUnit === 'in') result = cm / 2.54;
+    else if (toUnit === 'mm') result = cm * 10;
+    else result = cm;
+    return Math.round(result * 100) / 100;
+  }
+
+  function onUnitChange(newUnit) {
+    var oldUnit = currentUnit;
+    if (oldUnit === newUnit) return;
+    currentUnit = newUnit;
+    // Convert all dimension inputs
+    var ids = ['pageWidth','pageHeight','marginTop','marginRight','marginBottom','marginLeft',
+               'spacingH','spacingV','imgWidth','imgHeight'];
+    ids.forEach(function(id) {
+      var el = $('#' + id);
+      if (!el) return;
+      var v = parseFloat(el.value);
+      if (!isNaN(v) && v !== 0) el.value = convertUnit(v, oldUnit, newUnit);
+    });
+    updateUnitLabels(newUnit);
+    updatePageSummary();
+    render();
+    saveConfig();
+  }
+
+  function updateUnitLabels(unit) {
+    var suffix = unit === 'in' ? 'pulg' : unit;
+    document.querySelectorAll('.unit-label').forEach(function(el) {
+      el.textContent = suffix;
+    });
+  }
 
   // -- Config getters --
   function getConfig() {
@@ -256,10 +305,10 @@
     const opt = sel.selectedOptions[0];
     if (!opt || sel.value === '__custom') return;
 
-    const unit = opt.dataset.unit || 'cm';
-    const w = parseFloat(opt.dataset.w);
-    const h = parseFloat(opt.dataset.h);
-    $('#pageUnit').value = unit;
+    const presetUnit = opt.dataset.unit || 'cm';
+    const displayUnit = $('#pageUnit').value;
+    const w = convertUnit(parseFloat(opt.dataset.w), presetUnit, displayUnit);
+    const h = convertUnit(parseFloat(opt.dataset.h), presetUnit, displayUnit);
     $('#pageWidth').value = w;
     $('#pageHeight').value = h;
     if (w <= h) {
@@ -2305,14 +2354,16 @@
     $('#btnPortrait').addEventListener('click', () => setOrientation(false));
     $('#btnLandscape').addEventListener('click', () => setOrientation(true));
 
-    // Page config inputs
-    var pageInputs = '#pageWidth,#pageHeight,#pageUnit';
+    // Page config inputs (width, height only - unit has its own handler)
+    var pageInputs = '#pageWidth,#pageHeight';
     pageInputs.split(',').forEach(sel => {
       const el = $(sel);
       if (!el) return;
       el.addEventListener('change', () => { updatePageSummary(); render(); saveConfig(); });
       el.addEventListener('input', () => { updatePageSummary(); render(); });
     });
+    // Unit change handler with conversion
+    $('#pageUnit').addEventListener('change', function() { onUnitChange(this.value); });
 
     // Layout mode
     $('#layoutMode').addEventListener('change', () => { updateLayoutModeVisibility(); render(); saveConfig(); });
@@ -2527,6 +2578,8 @@
     } else {
       applyPreset();
     }
+    currentUnit = $('#pageUnit').value || 'cm';
+    updateUnitLabels(currentUnit);
     updateLayoutModeVisibility();
     updateCaptionVisibility();
     updateMarginsVisibility();

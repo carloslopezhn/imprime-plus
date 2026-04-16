@@ -114,17 +114,17 @@
       </div>
       <!-- Size mode -->
       <div class="form-row form-row-dual layout-mode-size hidden">
-        <div><label>Ancho img</label><input type="number" class="fc" id="imgWidth" value="5" step="0.1" min="0.5"></div>
-        <div><label>Alto img</label><input type="number" class="fc" id="imgHeight" value="5" step="0.1" min="0.5"></div>
+        <div><label>Ancho img (<span class="unit-label">cm</span>)</label><input type="number" class="fc" id="imgWidth" value="5" step="0.1" min="0.5"></div>
+        <div><label>Alto img (<span class="unit-label">cm</span>)</label><input type="number" class="fc" id="imgHeight" value="5" step="0.1" min="0.5"></div>
       </div>
       <!-- Spacing -->
       <div class="form-row">
         <div class="spacing-row">
-          <div><label>Espacio H</label><input type="number" class="fc" id="spacingH" value="0.3" step="0.1" min="0"></div>
+          <div><label>Espacio H (<span class="unit-label">cm</span>)</label><input type="number" class="fc" id="spacingH" value="0.3" step="0.1" min="0"></div>
           <button class="btn btn-outline btn-sm" id="btnLinkSpacing" title="Vincular espaciado H y V" style="margin-bottom:1px;padding:2px 6px;">
             <i class="bi bi-link-45deg" id="linkSpacingIcon"></i>
           </button>
-          <div><label>Espacio V</label><input type="number" class="fc" id="spacingV" value="0.3" step="0.1" min="0"></div>
+          <div><label>Espacio V (<span class="unit-label">cm</span>)</label><input type="number" class="fc" id="spacingV" value="0.3" step="0.1" min="0"></div>
         </div>
       </div>
       <!-- Margins -->
@@ -140,22 +140,22 @@
       <div id="marginsOptions" class="hidden">
         <div class="margins-cross">
           <div class="margin-cell-top">
-            <label>Superior</label>
+            <label>Superior (<span class="unit-label">cm</span>)</label>
             <input type="number" class="fc" id="marginTop" value="0" step="0.1" min="0">
           </div>
           <div class="margin-cell-left">
-            <label>Izquierdo</label>
+            <label>Izq (<span class="unit-label">cm</span>)</label>
             <input type="number" class="fc" id="marginLeft" value="0" step="0.1" min="0">
           </div>
           <button class="btn btn-outline btn-sm margin-cell-link" id="btnLinkMargins" title="Vincular margenes">
             <i class="bi bi-link-45deg" id="linkMarginsIcon"></i>
           </button>
           <div class="margin-cell-right">
-            <label>Derecho</label>
+            <label>Der (<span class="unit-label">cm</span>)</label>
             <input type="number" class="fc" id="marginRight" value="0" step="0.1" min="0">
           </div>
           <div class="margin-cell-bottom">
-            <label>Inferior</label>
+            <label>Inferior (<span class="unit-label">cm</span>)</label>
             <input type="number" class="fc" id="marginBottom" value="0" step="0.1" min="0">
           </div>
         </div>
