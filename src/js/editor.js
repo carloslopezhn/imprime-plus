@@ -2127,7 +2127,7 @@
 
     // Ask to configure printer if not done yet this session
     if (!printerConfigured) {
-      var wantConfig = confirm('¿Desea configurar la impresora antes de imprimir?');
+      var wantConfig = await window.__TAURI__.dialog.ask('¿Desea configurar la impresora antes de imprimir?', { title: 'Configuración de impresora', kind: 'info' });
       if (wantConfig) {
         try {
           await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
@@ -2396,7 +2396,7 @@
         if (!printer) { alert('Seleccione una impresora'); return; }
         // Ask to configure printer if not done yet this session
         if (!printerConfigured) {
-          var wantConfig = confirm('¿Desea configurar la impresora antes de imprimir?');
+          var wantConfig = await window.__TAURI__.dialog.ask('¿Desea configurar la impresora antes de imprimir?', { title: 'Configuración de impresora', kind: 'info' });
           if (wantConfig) {
             try {
               await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
