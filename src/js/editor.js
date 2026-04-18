@@ -317,6 +317,14 @@
     var canDup = sel.value !== '__custom';
     $('#btnDuplicatePreset').disabled = !canDup;
     $('#btnDuplicatePreset').style.opacity = canDup ? '1' : '0.4';
+    // Lock dimension inputs for builtin presets
+    var lockDims = isBuiltin;
+    $('#pageWidth').disabled = lockDims;
+    $('#pageHeight').disabled = lockDims;
+    $('#pageWidth').style.opacity = lockDims ? '0.5' : '1';
+    $('#pageHeight').style.opacity = lockDims ? '0.5' : '1';
+    $('#btnPortrait').disabled = lockDims;
+    $('#btnLandscape').disabled = lockDims;
   }
 
   function applyPreset() {
@@ -1585,6 +1593,7 @@
   var savedPrinter = '';
   var printerList = [];
   var defaultPresetId = 'letter';
+  var printerConfigured = false;
 
   async function loadPrinters() {
     try {
@@ -2116,14 +2125,16 @@
     var printer = sel ? sel.value : '';
     if (!printer) { alert('Seleccione una impresora'); return; }
 
-    // Open printer config first
-    try {
-      await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
-    } catch (e) {
-      alert('Error al abrir configuracion: ' + e);
-      return;
+    // Ask to configure printer if not done yet this session
+    if (!printerConfigured) {
+      var wantConfig = confirm('¿Desea configurar la impresora antes de imprimir?');
+      if (wantConfig) {
+        try {
+          await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
+        } catch (e) { alert('Error: ' + e); }
+      }
+      printerConfigured = true;
     }
-    if (!confirm('¿Desea imprimir esta pagina?')) return;
 
     var cfg = getConfig();
     var btn = $('#btnPrint');
@@ -2383,15 +2394,16 @@
         var sel = $('#printerSelect');
         var printer = sel ? sel.value : '';
         if (!printer) { alert('Seleccione una impresora'); return; }
-        // Open printer config first
-        try {
-          await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
-        } catch (e) {
-          alert('Error al abrir configuracion: ' + e);
-          return;
+        // Ask to configure printer if not done yet this session
+        if (!printerConfigured) {
+          var wantConfig = confirm('¿Desea configurar la impresora antes de imprimir?');
+          if (wantConfig) {
+            try {
+              await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
+            } catch (e) { alert('Error: ' + e); }
+          }
+          printerConfigured = true;
         }
-        // Ask if they want to print
-        if (!confirm('¿Desea imprimir ahora?')) return;
         printNative();
       } else {
         printNow();
@@ -2404,7 +2416,21 @@
 
     // Printer selection
     var prSel = $('#printerSelect');
-    if (prSel) prSel.addEventListener('change', function() { savedPrinter = prSel.value; saveConfig(); });
+    if (prSel) prSel.addEventListener('change', function() { savedPrinter = prSel.value; printerConfigured = false; saveConfig(); });
+
+    // Printer config button
+    $('#btnPrinterConfig').addEventListener('click', function() {
+      var sel = $('#printerSelect');
+      var printer = sel ? sel.value : '';
+      if (!printer) { alert('Seleccione una impresora'); return; }
+      if (window.__TAURI__) {
+        window.__TAURI__.core.invoke('open_printer_config', { printer: printer }).then(function() {
+          printerConfigured = true;
+        }).catch(function(e) {
+          alert('Error: ' + e);
+        });
+      }
+    });
 
     // Page config modal
     $('#btnPageConfigPanel').addEventListener('click', openModal);
