@@ -2116,6 +2116,29 @@
     render();
   }
 
+  // -- Print Choice Dialog (Configurar / Imprimir / Cancelar) --
+  function showPrintChoiceDialog() {
+    return new Promise(function(resolve) {
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+      var box = document.createElement('div');
+      box.style.cssText = 'background:#fff;padding:24px 28px;border-radius:8px;min-width:320px;box-shadow:0 4px 24px rgba(0,0,0,0.3);font-family:inherit;';
+      box.innerHTML = '<h5 style="margin:0 0 8px 0;font-size:1.05em;font-weight:600;">Configuración de impresora</h5>' +
+        '<p style="margin:0 0 20px 0;color:#555;font-size:.95em;">¿Desea configurar la impresora antes de imprimir?</p>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;">' +
+          '<button id="dlgCancel" style="padding:6px 16px;border:1px solid #6c757d;background:#6c757d;color:#fff;border-radius:4px;cursor:pointer;font-size:.9em;">Cancelar</button>' +
+          '<button id="dlgPrint" style="padding:6px 16px;border:1px solid #0d6efd;background:#0d6efd;color:#fff;border-radius:4px;cursor:pointer;font-size:.9em;">Imprimir</button>' +
+          '<button id="dlgConfig" style="padding:6px 16px;border:1px solid #ffc107;background:#ffc107;color:#000;border-radius:4px;cursor:pointer;font-size:.9em;">Configurar</button>' +
+        '</div>';
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      function done(result) { document.body.removeChild(overlay); resolve(result); }
+      box.querySelector('#dlgConfig').onclick = function() { done('configure'); };
+      box.querySelector('#dlgPrint').onclick  = function() { done('print'); };
+      box.querySelector('#dlgCancel').onclick = function() { done('cancel'); };
+    });
+  }
+
   // -- Print Single Page --
   async function printSinglePage(pageIndex) {
     if (!imageCount()) { alert('No hay imagenes para imprimir'); return; }
@@ -2127,8 +2150,9 @@
 
     // Ask to configure printer if not done yet this session
     if (!printerConfigured) {
-      var wantConfig = await window.__TAURI__.dialog.ask('¿Desea configurar la impresora antes de imprimir?', { title: 'Configuración de impresora', kind: 'info' });
-      if (wantConfig) {
+      var choice = await showPrintChoiceDialog();
+      if (choice === 'cancel') return;
+      if (choice === 'configure') {
         try {
           await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
         } catch (e) { alert('Error: ' + e); }
@@ -2396,8 +2420,9 @@
         if (!printer) { alert('Seleccione una impresora'); return; }
         // Ask to configure printer if not done yet this session
         if (!printerConfigured) {
-          var wantConfig = await window.__TAURI__.dialog.ask('¿Desea configurar la impresora antes de imprimir?', { title: 'Configuración de impresora', kind: 'info' });
-          if (wantConfig) {
+          var choice = await showPrintChoiceDialog();
+          if (choice === 'cancel') return;
+          if (choice === 'configure') {
             try {
               await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
             } catch (e) { alert('Error: ' + e); }
