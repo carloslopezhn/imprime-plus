@@ -239,7 +239,7 @@ pub fn open_printer_config(printer: String) -> Result<String, String> {
     }
     std::process::Command::new("rundll32")
         .args(&["printui.dll,PrintUIEntry", "/e", "/n", &printer])
-        .spawn()
+        .status()
         .map_err(|e| format!("Error al abrir configuracion: {}", e))?;
     Ok("ok".into())
 }
