@@ -34,7 +34,6 @@
     <select class="tb-select" id="printerSelect" title="Seleccionar impresora">
       <option value="">Cargando...</option>
     </select>
-    <button class="tb-btn" id="btnPrinterConfig" title="Configuracion de impresora"><i class="bi bi-sliders"></i></button>
     <button class="tb-btn tb-primary" id="btnPrint" title="Imprimir todas las paginas"><i class="bi bi-printer"></i> Imprimir</button>
     <div class="tb-sep"></div>
     <button class="tb-btn" id="btnClearConfig" title="Limpiar configuraciones individuales"><i class="bi bi-eraser"></i></button>
@@ -448,6 +447,7 @@
         <label>Tamano predefinido</label>
         <div class="input-row">
           <select class="fc" id="pagePreset"></select>
+          <button class="btn btn-outline btn-sm" id="btnDuplicatePreset" title="Duplicar preset"><i class="bi bi-copy"></i></button>
           <button class="btn btn-danger-outline btn-sm" id="btnDeletePreset" title="Eliminar preset"><i class="bi bi-trash"></i></button>
         </div>
       </div>
@@ -487,6 +487,9 @@
           <input type="text" class="fc" id="presetName" placeholder="Nombre del preset">
           <button class="btn btn-primary btn-sm" id="btnConfirmPreset"><i class="bi bi-bookmark-plus"></i> Guardar</button>
         </div>
+      </div>
+      <div class="mb">
+        <button class="btn btn-outline btn-sm btn-block" id="btnSetDefaultPreset"><i class="bi bi-star"></i> Usar formato actual por defecto</button>
       </div>
     </div>
     <div class="modal-footer">

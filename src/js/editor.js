@@ -188,6 +188,7 @@
   function saveConfig() {
     const cfg = getConfig();
     cfg.savedPrinter = savedPrinter;
+    cfg.defaultPresetId = defaultPresetId;
     writeAppFile(CONFIG_FILE, cfg);
   }
 
@@ -233,6 +234,8 @@
     });
     // Restore saved printer
     if (saved.savedPrinter) savedPrinter = saved.savedPrinter;
+    // Restore default preset
+    if (saved.defaultPresetId) defaultPresetId = saved.defaultPresetId;
   }
 
   // -- Custom Modal --
@@ -267,7 +270,7 @@
     builtins.forEach(p => {
       const o = document.createElement('option');
       o.value = p.id;
-      o.textContent = p.name;
+      o.textContent = p.name + (p.id === defaultPresetId ? ' \u2605' : '');
       o.dataset.w = p.width;
       o.dataset.h = p.height;
       o.dataset.unit = p.unit;
@@ -280,7 +283,7 @@
       customs.forEach(p => {
         const o = document.createElement('option');
         o.value = p.id;
-        o.textContent = p.name;
+        o.textContent = p.name + (p.id === defaultPresetId ? ' \u2605' : '');
         o.dataset.w = p.width;
         o.dataset.h = p.height;
         o.dataset.unit = p.unit;
@@ -295,9 +298,25 @@
     custom.textContent = '-- Personalizado --';
     sel.appendChild(custom);
 
-    // Force Carta (letter) as default selection
-    const cartaOpt = sel.querySelector('option[value="letter"]');
-    if (cartaOpt) cartaOpt.selected = true;
+    // Select the default preset
+    const defOpt = sel.querySelector('option[value="' + defaultPresetId + '"]');
+    if (defOpt) defOpt.selected = true;
+
+    updatePresetButtons();
+  }
+
+  function updatePresetButtons() {
+    const sel = $('#pagePreset');
+    const opt = sel.selectedOptions[0];
+    const isCustom = opt && opt.dataset.custom === '1';
+    const isBuiltin = opt && !isCustom && sel.value !== '__custom';
+    // Delete only for custom presets
+    $('#btnDeletePreset').disabled = !isCustom;
+    $('#btnDeletePreset').style.opacity = isCustom ? '1' : '0.4';
+    // Duplicate always available except for __custom
+    var canDup = sel.value !== '__custom';
+    $('#btnDuplicatePreset').disabled = !canDup;
+    $('#btnDuplicatePreset').style.opacity = canDup ? '1' : '0.4';
   }
 
   function applyPreset() {
@@ -346,10 +365,29 @@
       alert('No se puede eliminar un preset predefinido');
       return;
     }
-    if (!confirm('Eliminar preset "' + opt.textContent + '"?')) return;
+    if (!confirm('Eliminar preset "' + opt.textContent.replace(' \u2605', '') + '"?')) return;
     presets = presets.filter(p => p.id !== sel.value);
+    if (defaultPresetId === sel.value) defaultPresetId = 'letter';
     saveCustomPresets();
     renderPresetSelect();
+    applyPreset();
+  }
+
+  function duplicateSelectedPreset() {
+    const sel = $('#pagePreset');
+    const opt = sel.selectedOptions[0];
+    if (!opt || sel.value === '__custom') return;
+    const src = presets.find(p => p.id === sel.value);
+    if (!src) return;
+    const name = prompt('Nombre para la copia:', src.name + ' (copia)');
+    if (!name || !name.trim()) return;
+    const id = 'custom_' + Date.now();
+    presets.push({ id, name: name.trim(), width: src.width, height: src.height, unit: src.unit, builtin: false });
+    saveCustomPresets();
+    renderPresetSelect();
+    const newOpt = sel.querySelector('option[value="' + id + '"]');
+    if (newOpt) newOpt.selected = true;
+    updatePresetButtons();
     applyPreset();
   }
 
@@ -1546,6 +1584,7 @@
   // -- Printer State --
   var savedPrinter = '';
   var printerList = [];
+  var defaultPresetId = 'letter';
 
   async function loadPrinters() {
     try {
@@ -1751,14 +1790,20 @@
       clipShape(ctx, shape, cx, imgCy, cw, imgCh, radius);
       ctx.fill();
 
-      // Draw image
+      // Clamp pan offsets to zoomed overflow (match screen clamping)
+      var maxPanX = Math.max(0, (zoomFactor - 1) * cw / 2);
+      var maxPanY = Math.max(0, (zoomFactor - 1) * imgCh / 2);
+      ox = Math.max(-maxPanX, Math.min(maxPanX, ox));
+      oy = Math.max(-maxPanY, Math.min(maxPanY, oy));
+
+      // Draw image — transform order matches CSS: translate(ox,oy) scale(zoom) rotate(rot) with transform-origin center
       try {
         var imgEl = await loadImageEl(img.src);
         ctx.save();
         ctx.translate(cx + cw / 2, imgCy + imgCh / 2);
+        if (ox !== 0 || oy !== 0) ctx.translate(ox, oy);
+        if (zoomFactor !== 1) ctx.scale(zoomFactor, zoomFactor);
         if (rot) ctx.rotate(rot * Math.PI / 180);
-        ctx.scale(zoomFactor, zoomFactor);
-        ctx.translate(ox / zoomFactor, oy / zoomFactor);
         ctx.translate(-cw / 2, -imgCh / 2);
         drawFitCanvas(ctx, imgEl, 0, 0, cw, imgCh, fit);
         ctx.restore();
@@ -2071,6 +2116,15 @@
     var printer = sel ? sel.value : '';
     if (!printer) { alert('Seleccione una impresora'); return; }
 
+    // Open printer config first
+    try {
+      await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
+    } catch (e) {
+      alert('Error al abrir configuracion: ' + e);
+      return;
+    }
+    if (!confirm('¿Desea imprimir esta pagina?')) return;
+
     var cfg = getConfig();
     var btn = $('#btnPrint');
     var origText = btn.innerHTML;
@@ -2323,8 +2377,21 @@
     $('#btnZoomFit').addEventListener('click', zoomFit);
 
     // Print - use native if Tauri available, fallback to browser
-    $('#btnPrint').addEventListener('click', function() {
+    $('#btnPrint').addEventListener('click', async function() {
       if (window.__TAURI__) {
+        if (!imageCount()) { alert('No hay imagenes para imprimir'); return; }
+        var sel = $('#printerSelect');
+        var printer = sel ? sel.value : '';
+        if (!printer) { alert('Seleccione una impresora'); return; }
+        // Open printer config first
+        try {
+          await window.__TAURI__.core.invoke('open_printer_config', { printer: printer });
+        } catch (e) {
+          alert('Error al abrir configuracion: ' + e);
+          return;
+        }
+        // Ask if they want to print
+        if (!confirm('¿Desea imprimir ahora?')) return;
         printNative();
       } else {
         printNow();
@@ -2348,9 +2415,19 @@
     });
 
     // Inside modal
-    $('#pagePreset').addEventListener('change', applyPreset);
+    $('#pagePreset').addEventListener('change', function() { applyPreset(); updatePresetButtons(); });
     $('#btnDeletePreset').addEventListener('click', deleteSelectedPreset);
+    $('#btnDuplicatePreset').addEventListener('click', duplicateSelectedPreset);
     $('#btnConfirmPreset').addEventListener('click', confirmSavePreset);
+    $('#btnSetDefaultPreset').addEventListener('click', function() {
+      var sel = $('#pagePreset');
+      if (!sel.value || sel.value === '__custom') { alert('Seleccione un formato primero'); return; }
+      defaultPresetId = sel.value;
+      renderPresetSelect();
+      var name = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.replace(' \u2605', '') : sel.value;
+      showToast(name + ' es ahora el formato por defecto');
+      saveConfig();
+    });
     $('#btnPortrait').addEventListener('click', () => setOrientation(false));
     $('#btnLandscape').addEventListener('click', () => setOrientation(true));
 
@@ -2469,18 +2546,6 @@
     $('#btnPagePrev').addEventListener('click', () => goToPage(currentPage - 1));
     $('#btnPageNext').addEventListener('click', () => goToPage(currentPage + 1));
     $('#btnPageLast').addEventListener('click', () => goToPage(totalPages - 1));
-
-    // Printer config button
-    $('#btnPrinterConfig').addEventListener('click', function() {
-      var sel = $('#printerSelect');
-      var printer = sel ? sel.value : '';
-      if (!printer) { alert('Seleccione una impresora'); return; }
-      if (window.__TAURI__) {
-        window.__TAURI__.core.invoke('open_printer_config', { printer: printer }).catch(function(e) {
-          alert('Error: ' + e);
-        });
-      }
-    });
 
     // Context menu actions
     $$('#ctxMenu .ctx-item').forEach(function(btn) {

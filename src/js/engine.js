@@ -122,6 +122,7 @@ const Engine = (function () {
 
     for (var i = 0; i < images.length; i++) {
       var img = images[i];
+      if (!img) continue;
       var ov = img.overrides || {};
       var cs = Math.min(ov.colSpan || 1, cols);
       var rs = Math.min(ov.rowSpan || 1, rows);

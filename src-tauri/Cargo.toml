@@ -1,6 +1,6 @@
 [package]
 name = "imprime-plus"
-version = "1.5.0"
+version = "1.6.0"
 description = "Imprime+ - Editor de impresion de imagenes"
 authors = ["UTP Honduras"]
 license = "MIT"
