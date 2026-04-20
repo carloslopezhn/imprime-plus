@@ -5,12 +5,15 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "bundle:bg": "esbuild bundle-bg-removal.js --bundle --format=iife --outfile=src/js/bg-removal.js --minify"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2"
+    "@tauri-apps/cli": "^2",
+    "esbuild": "^0.28.0"
   },
   "dependencies": {
+    "@imgly/background-removal": "^1.5.8",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-fs": "^2.5.0",

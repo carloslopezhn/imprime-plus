@@ -1093,7 +1093,7 @@
     if (!img) { showToast('Selecciona una imagen primero'); return; }
 
     if (typeof window.imglyRemoveBackground !== 'function') {
-      showToast('Cargando modelo de IA... intenta de nuevo en unos segundos');
+      showToast('Error: libreria de borrado no disponible');
       return;
     }
 
@@ -1103,7 +1103,7 @@
     var labelEl = $('#removeBgLabel');
     progressEl.classList.remove('hidden');
     barEl.style.width = '10%';
-    labelEl.textContent = 'Descargando modelo...';
+    labelEl.textContent = 'Preparando modelo...';
 
     // Save original if not already saved
     if (!img.originalSrc) img.originalSrc = img.src;
