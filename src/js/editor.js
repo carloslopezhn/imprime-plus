@@ -1078,6 +1078,13 @@
   // -- Background Removal --
   var _bgRemovalBusy = false;
 
+  // -- Manual Eraser --
+  var _eraserActive = false;
+  var _eraserImgId = null;
+  var _eraserCanvas = null;
+  var _eraserCtx = null;
+  var _eraserDrawing = false;
+
   function removeImageBackground(imgId) {
     if (_bgRemovalBusy) { showToast('Ya hay un proceso en curso'); return; }
     var img = imgId !== undefined
@@ -1164,7 +1171,197 @@
     }
   }
 
+  // -- Manual Eraser Tool --
+  function startManualEraser(imgId) {
+    if (_eraserActive) return;
+    var img = null;
+    if (imgId !== undefined) {
+      img = images.find(function(i) { return i !== null && i.id === imgId; });
+    }
+    if (!img && selectedIds.size === 1) {
+      var sid = selectedIds.values().next().value;
+      img = images.find(function(i) { return i !== null && i.id === sid; });
+    }
+    if (!img) { showToast('Selecciona una imagen primero'); return; }
+
+    // Save original if not already saved
+    if (!img.originalSrc) img.originalSrc = img.src;
+
+    _eraserImgId = img.id;
+    _eraserActive = true;
+
+    // Find the img-cell in the DOM
+    var cellEl = document.querySelector('.img-cell[data-id="' + img.id + '"]');
+    if (!cellEl) { _eraserActive = false; return; }
+    var innerEl = cellEl.querySelector('.img-cell-inner');
+    if (!innerEl) { _eraserActive = false; return; }
+
+    // Create overlay canvas matching inner dimensions
+    var rect = innerEl.getBoundingClientRect();
+    var canvas = document.createElement('canvas');
+    canvas.className = 'eraser-canvas';
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    innerEl.appendChild(canvas);
+    innerEl.classList.add('eraser-active');
+
+    _eraserCanvas = canvas;
+    _eraserCtx = canvas.getContext('2d');
+    _eraserCtx.lineCap = 'round';
+    _eraserCtx.lineJoin = 'round';
+
+    // Draw events on canvas
+    canvas.addEventListener('mousedown', eraserMouseDown);
+    canvas.addEventListener('mousemove', eraserMouseMove);
+    canvas.addEventListener('mouseup', eraserMouseUp);
+    canvas.addEventListener('mouseleave', eraserMouseUp);
+    // Touch support
+    canvas.addEventListener('touchstart', eraserTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', eraserTouchMove, { passive: false });
+    canvas.addEventListener('touchend', eraserMouseUp);
+
+    // Show controls, update button
+    $('#eraserControls').classList.remove('hidden');
+    $('#btnManualEraser').classList.add('active-tool');
+    showToast('Pinta sobre las areas a borrar');
+  }
+
+  function eraserMouseDown(e) {
+    if (!_eraserActive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    _eraserDrawing = true;
+    var pos = getEraserPos(e);
+    _eraserCtx.globalCompositeOperation = 'source-over';
+    _eraserCtx.strokeStyle = 'rgba(255, 0, 0, 0.45)';
+    _eraserCtx.lineWidth = parseInt($('#eraserSize').value) || 20;
+    _eraserCtx.beginPath();
+    _eraserCtx.moveTo(pos.x, pos.y);
+    // Draw a dot for single click
+    _eraserCtx.lineTo(pos.x + 0.1, pos.y + 0.1);
+    _eraserCtx.stroke();
+  }
+
+  function eraserMouseMove(e) {
+    if (!_eraserActive || !_eraserDrawing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var pos = getEraserPos(e);
+    _eraserCtx.lineTo(pos.x, pos.y);
+    _eraserCtx.stroke();
+  }
+
+  function eraserMouseUp(e) {
+    if (_eraserDrawing) {
+      _eraserDrawing = false;
+    }
+  }
+
+  function eraserTouchStart(e) {
+    if (!_eraserActive) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.touches.length === 1) {
+      _eraserDrawing = true;
+      var pos = getEraserPos(e.touches[0]);
+      _eraserCtx.globalCompositeOperation = 'source-over';
+      _eraserCtx.strokeStyle = 'rgba(255, 0, 0, 0.45)';
+      _eraserCtx.lineWidth = parseInt($('#eraserSize').value) || 20;
+      _eraserCtx.beginPath();
+      _eraserCtx.moveTo(pos.x, pos.y);
+    }
+  }
+
+  function eraserTouchMove(e) {
+    if (!_eraserActive || !_eraserDrawing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.touches.length === 1) {
+      var pos = getEraserPos(e.touches[0]);
+      _eraserCtx.lineTo(pos.x, pos.y);
+      _eraserCtx.stroke();
+    }
+  }
+
+  function getEraserPos(e) {
+    var rect = _eraserCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (_eraserCanvas.width / rect.width),
+      y: (e.clientY - rect.top) * (_eraserCanvas.height / rect.height)
+    };
+  }
+
+  function applyManualEraser() {
+    if (!_eraserActive || !_eraserCanvas) return;
+    var img = images.find(function(i) { return i !== null && i.id === _eraserImgId; });
+    if (!img) { cancelManualEraser(); return; }
+
+    // Load the current image onto a temp canvas
+    var tempImg = new Image();
+    tempImg.onload = function() {
+      var w = tempImg.naturalWidth;
+      var h = tempImg.naturalHeight;
+      var tempCanvas = document.createElement('canvas');
+      tempCanvas.width = w;
+      tempCanvas.height = h;
+      var tCtx = tempCanvas.getContext('2d');
+
+      // Draw original image
+      tCtx.drawImage(tempImg, 0, 0, w, h);
+
+      // Scale eraser overlay to full resolution and use destination-out
+      // This makes painted areas transparent in one fast operation
+      tCtx.globalCompositeOperation = 'destination-out';
+      tCtx.drawImage(_eraserCanvas, 0, 0, w, h);
+      tCtx.globalCompositeOperation = 'source-over';
+
+      // Convert to blob and update image
+      tempCanvas.toBlob(function(blob) {
+        var url = URL.createObjectURL(blob);
+        img.src = url;
+        cleanupEraser();
+        render();
+        updateInspector();
+        showToast('Borrado aplicado');
+      }, 'image/png');
+    };
+    tempImg.src = img.src;
+  }
+
+  function cancelManualEraser() {
+    cleanupEraser();
+    showToast('Borrador cancelado');
+  }
+
+  function cleanupEraser() {
+    if (_eraserCanvas) {
+      _eraserCanvas.removeEventListener('mousedown', eraserMouseDown);
+      _eraserCanvas.removeEventListener('mousemove', eraserMouseMove);
+      _eraserCanvas.removeEventListener('mouseup', eraserMouseUp);
+      _eraserCanvas.removeEventListener('mouseleave', eraserMouseUp);
+      _eraserCanvas.removeEventListener('touchstart', eraserTouchStart);
+      _eraserCanvas.removeEventListener('touchmove', eraserTouchMove);
+      _eraserCanvas.removeEventListener('touchend', eraserMouseUp);
+      var parent = _eraserCanvas.parentElement;
+      if (parent) {
+        parent.removeChild(_eraserCanvas);
+        parent.classList.remove('eraser-active');
+      }
+    }
+    _eraserCanvas = null;
+    _eraserCtx = null;
+    _eraserActive = false;
+    _eraserImgId = null;
+    _eraserDrawing = false;
+    $('#eraserControls').classList.add('hidden');
+    $('#btnManualEraser').classList.remove('active-tool');
+  }
+
   function render() {
+    // Cancel eraser if active (render rebuilds DOM)
+    if (_eraserActive) cleanupEraser();
     const cfg = getConfig();
     if (cfg.posterEnabled) {
       updateRightPanelForMode();
@@ -2334,6 +2531,10 @@
     if (ctxTarget) removeImageBackground(ctxTarget.id);
   }
 
+  function ctxManualEraser() {
+    if (ctxTarget) startManualEraser(ctxTarget.id);
+  }
+
   // -- Print Choice Dialog (Configurar / Imprimir / Cancelar) --
   function showPrintChoiceDialog() {
     return new Promise(function(resolve) {
@@ -2838,6 +3039,14 @@
     $('#btnRemoveBg').addEventListener('click', function() { removeImageBackground(); });
     $('#btnRestoreOriginal').addEventListener('click', restoreOriginalImage);
 
+    // Manual eraser
+    $('#btnManualEraser').addEventListener('click', function() { startManualEraser(); });
+    $('#btnEraserApply').addEventListener('click', applyManualEraser);
+    $('#btnEraserCancel').addEventListener('click', cancelManualEraser);
+    $('#eraserSize').addEventListener('input', function() {
+      $('#eraserSizeVal').textContent = this.value + 'px';
+    });
+
     // Context menu actions
     $$('#ctxMenu .ctx-item').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -2849,6 +3058,7 @@
         else if (action === 'expandV') ctxExpandV();
         else if (action === 'adjustments') ctxAdjustments();
         else if (action === 'removebg') ctxRemoveBg();
+        else if (action === 'manualeraser') ctxManualEraser();
         hideContextMenu();
       });
     });

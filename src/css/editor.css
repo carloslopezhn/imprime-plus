@@ -1122,3 +1122,22 @@ input[type="range"].fc:focus { box-shadow: none; }
 #inspFiltersToggle:hover { color: var(--accent); }
 #inspFiltersSection .editor-slider-row { margin-bottom: 8px; }
 #inspFiltersSection .editor-slider-row label { font-size: 0.73rem; }
+
+/* -- Manual Eraser -- */
+.eraser-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  cursor: crosshair;
+}
+.img-cell-inner.eraser-active {
+  position: relative;
+  outline: 2px dashed var(--danger);
+  outline-offset: -2px;
+}
+.active-tool {
+  background: var(--accent) !important;
+  color: #fff !important;
+  border-color: var(--accent) !important;
+}
