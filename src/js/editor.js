@@ -20,7 +20,6 @@
   let totalPages = 1;
   let moveModeId = null;
   let moveTimer = null;
-  let editorImageId = null; // ID of image being edited in image editor
 
   function imageCount() { return images.filter(function(i) { return i !== null; }).length; }
   function trimTrailingNulls() { while (images.length > 0 && images[images.length - 1] === null) images.pop(); }
@@ -773,6 +772,8 @@
     $('#inspCaptionOptions').classList.toggle('hidden', !showCapOpts);
     var inspCapPos = ov.captionPosition || cfg.captionPosition;
     $('#inspCaptionOverlayColors').classList.toggle('hidden', inspCapPos !== 'overlay');
+    // Update filter sliders
+    updateInspectorFilters(img);
   }
 
   function applyInspector() {
@@ -1004,121 +1005,163 @@
     return false;
   }
 
-  function openImageEditor(imgId) {
+  // -- Inspector filter sliders (in right panel) --
+  function updateInspectorFilters(img) {
+    var f = (img && img.overrides && img.overrides.filters) || {};
+    $('#inspBrightness').value = f.brightness !== undefined ? f.brightness : 100;
+    $('#inspContrast').value = f.contrast !== undefined ? f.contrast : 100;
+    $('#inspSaturate').value = f.saturate !== undefined ? f.saturate : 100;
+    $('#inspHueRotate').value = f.hueRotate !== undefined ? f.hueRotate : 0;
+    $('#inspGrayscale').value = f.grayscale !== undefined ? f.grayscale : 0;
+    $('#inspSepia').value = f.sepia !== undefined ? f.sepia : 0;
+    $('#inspBlur').value = f.blur !== undefined ? f.blur : 0;
+    $('#inspInvert').value = f.invert !== undefined ? f.invert : 0;
+    $('#inspOpacity').value = f.opacity !== undefined ? f.opacity : 100;
+    updateInspectorFilterLabels();
+    // Show/hide restore original button
+    $('#btnRestoreOriginal').classList.toggle('hidden', !img || !img.originalSrc);
+  }
+
+  function updateInspectorFilterLabels() {
+    $('#inspBrightnessVal').textContent = $('#inspBrightness').value + '%';
+    $('#inspContrastVal').textContent = $('#inspContrast').value + '%';
+    $('#inspSaturateVal').textContent = $('#inspSaturate').value + '%';
+    $('#inspHueRotateVal').innerHTML = $('#inspHueRotate').value + '&deg;';
+    $('#inspGrayscaleVal').textContent = $('#inspGrayscale').value + '%';
+    $('#inspSepiaVal').textContent = $('#inspSepia').value + '%';
+    $('#inspBlurVal').textContent = $('#inspBlur').value + 'px';
+    $('#inspInvertVal').textContent = $('#inspInvert').value + '%';
+    $('#inspOpacityVal').textContent = $('#inspOpacity').value + '%';
+  }
+
+  function getInspectorFilters() {
+    return {
+      brightness: parseFloat($('#inspBrightness').value),
+      contrast: parseFloat($('#inspContrast').value),
+      saturate: parseFloat($('#inspSaturate').value),
+      hueRotate: parseFloat($('#inspHueRotate').value),
+      grayscale: parseFloat($('#inspGrayscale').value),
+      sepia: parseFloat($('#inspSepia').value),
+      blur: parseFloat($('#inspBlur').value),
+      invert: parseFloat($('#inspInvert').value),
+      opacity: parseFloat($('#inspOpacity').value),
+    };
+  }
+
+  function onInspectorFilterInput() {
+    updateInspectorFilterLabels();
+    var singleId = selectedIds.size === 1 ? selectedIds.values().next().value : null;
+    if (!singleId && $('#posterEnabled').checked) {
+      var firstImg = images.find(function(i) { return i !== null; });
+      if (firstImg) singleId = firstImg.id;
+    }
+    var img = singleId ? images.find(function(i) { return i !== null && i.id === singleId; }) : null;
+    if (img) {
+      img.overrides.filters = getInspectorFilters();
+      render();
+    }
+  }
+
+  function inspectorFilterReset() {
+    $('#inspBrightness').value = 100;
+    $('#inspContrast').value = 100;
+    $('#inspSaturate').value = 100;
+    $('#inspHueRotate').value = 0;
+    $('#inspGrayscale').value = 0;
+    $('#inspSepia').value = 0;
+    $('#inspBlur').value = 0;
+    $('#inspInvert').value = 0;
+    $('#inspOpacity').value = 100;
+    onInspectorFilterInput();
+  }
+
+  // -- Background Removal --
+  var _bgRemovalBusy = false;
+
+  function removeImageBackground(imgId) {
+    if (_bgRemovalBusy) { showToast('Ya hay un proceso en curso'); return; }
     var img = imgId !== undefined
       ? images.find(function(i) { return i !== null && i.id === imgId; })
       : null;
-    // If no specific id, try selected image
     if (!img && selectedIds.size === 1) {
       var sid = selectedIds.values().next().value;
       img = images.find(function(i) { return i !== null && i.id === sid; });
     }
-    // In poster mode, use the first (only) image
     if (!img && $('#posterEnabled').checked) {
       img = images.find(function(i) { return i !== null; });
     }
-    if (!img) {
-      showToast('Selecciona una imagen primero');
+    if (!img) { showToast('Selecciona una imagen primero'); return; }
+
+    if (typeof window.imglyRemoveBackground !== 'function') {
+      showToast('Cargando modelo de IA... intenta de nuevo en unos segundos');
       return;
     }
-    editorImageId = img.id;
-    // Show editor panel, hide left panel
-    $('#panelLeft').classList.add('hidden');
-    $('#panelEditor').classList.remove('hidden');
-    $('#btnEditImage').classList.add('tb-active');
-    // Thumb
-    var f = img.overrides.filters || {};
-    var thumbImg = document.createElement('img');
-    thumbImg.src = img.src;
-    var filterStr = buildFilterString(f);
-    if (filterStr) thumbImg.style.filter = filterStr;
-    $('#editorThumb').innerHTML = '';
-    $('#editorThumb').appendChild(thumbImg);
-    // Set slider values
-    $('#edBrightness').value = f.brightness !== undefined ? f.brightness : 100;
-    $('#edContrast').value = f.contrast !== undefined ? f.contrast : 100;
-    $('#edSaturate').value = f.saturate !== undefined ? f.saturate : 100;
-    $('#edHueRotate').value = f.hueRotate !== undefined ? f.hueRotate : 0;
-    $('#edGrayscale').value = f.grayscale !== undefined ? f.grayscale : 0;
-    $('#edSepia').value = f.sepia !== undefined ? f.sepia : 0;
-    $('#edBlur').value = f.blur !== undefined ? f.blur : 0;
-    $('#edInvert').value = f.invert !== undefined ? f.invert : 0;
-    $('#edOpacity').value = f.opacity !== undefined ? f.opacity : 100;
-    updateEditorLabels();
+
+    _bgRemovalBusy = true;
+    var progressEl = $('#removeBgProgress');
+    var barEl = $('#removeBgBar');
+    var labelEl = $('#removeBgLabel');
+    progressEl.classList.remove('hidden');
+    barEl.style.width = '10%';
+    labelEl.textContent = 'Descargando modelo...';
+
+    // Save original if not already saved
+    if (!img.originalSrc) img.originalSrc = img.src;
+
+    // Convert src to blob for the library
+    fetch(img.src)
+      .then(function(r) { return r.blob(); })
+      .then(function(blob) {
+        labelEl.textContent = 'Procesando...';
+        barEl.style.width = '30%';
+        return window.imglyRemoveBackground(blob, {
+          progress: function(key, current, total) {
+            if (total > 0) {
+              var pct = Math.round((current / total) * 100);
+              barEl.style.width = Math.min(30 + pct * 0.6, 90) + '%';
+              labelEl.textContent = 'Procesando... ' + pct + '%';
+            }
+          }
+        });
+      })
+      .then(function(resultBlob) {
+        barEl.style.width = '100%';
+        labelEl.textContent = 'Completado!';
+        var url = URL.createObjectURL(resultBlob);
+        img.src = url;
+        // Pre-load
+        var preload = new Image();
+        preload.onload = function() {
+          render();
+          updateInspector();
+          showToast('Fondo eliminado');
+        };
+        preload.src = url;
+        setTimeout(function() {
+          progressEl.classList.add('hidden');
+          barEl.style.width = '0%';
+        }, 1500);
+        _bgRemovalBusy = false;
+      })
+      .catch(function(err) {
+        console.error('Background removal error:', err);
+        showToast('Error al borrar fondo: ' + (err.message || err));
+        progressEl.classList.add('hidden');
+        barEl.style.width = '0%';
+        _bgRemovalBusy = false;
+      });
   }
 
-  function closeImageEditor() {
-    editorImageId = null;
-    $('#panelEditor').classList.add('hidden');
-    $('#panelLeft').classList.remove('hidden');
-    $('#btnEditImage').classList.remove('tb-active');
-  }
-
-  function getEditorFilters() {
-    return {
-      brightness: parseFloat($('#edBrightness').value),
-      contrast: parseFloat($('#edContrast').value),
-      saturate: parseFloat($('#edSaturate').value),
-      hueRotate: parseFloat($('#edHueRotate').value),
-      grayscale: parseFloat($('#edGrayscale').value),
-      sepia: parseFloat($('#edSepia').value),
-      blur: parseFloat($('#edBlur').value),
-      invert: parseFloat($('#edInvert').value),
-      opacity: parseFloat($('#edOpacity').value),
-    };
-  }
-
-  function updateEditorLabels() {
-    $('#edBrightnessVal').textContent = $('#edBrightness').value + '%';
-    $('#edContrastVal').textContent = $('#edContrast').value + '%';
-    $('#edSaturateVal').textContent = $('#edSaturate').value + '%';
-    $('#edHueRotateVal').innerHTML = $('#edHueRotate').value + '&deg;';
-    $('#edGrayscaleVal').textContent = $('#edGrayscale').value + '%';
-    $('#edSepiaVal').textContent = $('#edSepia').value + '%';
-    $('#edBlurVal').textContent = $('#edBlur').value + 'px';
-    $('#edInvertVal').textContent = $('#edInvert').value + '%';
-    $('#edOpacityVal').textContent = $('#edOpacity').value + '%';
-  }
-
-  function onEditorSliderInput() {
-    updateEditorLabels();
-    var filters = getEditorFilters();
-    // Live preview on thumb
-    var thumbImg = $('#editorThumb img');
-    if (thumbImg) thumbImg.style.filter = buildFilterString(filters);
-    // Live preview on canvas
-    if (editorImageId !== null) {
-      var img = images.find(function(i) { return i !== null && i.id === editorImageId; });
-      if (img) {
-        img.overrides.filters = filters;
-        render();
-      }
+  function restoreOriginalImage() {
+    var singleId = selectedIds.size === 1 ? selectedIds.values().next().value : null;
+    var img = singleId ? images.find(function(i) { return i !== null && i.id === singleId; }) : null;
+    if (img && img.originalSrc) {
+      img.src = img.originalSrc;
+      delete img.originalSrc;
+      render();
+      updateInspector();
+      showToast('Imagen original restaurada');
     }
-  }
-
-  function editorReset() {
-    $('#edBrightness').value = 100;
-    $('#edContrast').value = 100;
-    $('#edSaturate').value = 100;
-    $('#edHueRotate').value = 0;
-    $('#edGrayscale').value = 0;
-    $('#edSepia').value = 0;
-    $('#edBlur').value = 0;
-    $('#edInvert').value = 0;
-    $('#edOpacity').value = 100;
-    onEditorSliderInput();
-  }
-
-  function editorApply() {
-    if (editorImageId !== null) {
-      var img = images.find(function(i) { return i !== null && i.id === editorImageId; });
-      if (img) {
-        img.overrides.filters = getEditorFilters();
-        render();
-      }
-    }
-    closeImageEditor();
-    showToast('Filtros aplicados');
   }
 
   function render() {
@@ -2273,6 +2316,24 @@
     render();
   }
 
+  function ctxAdjustments() {
+    // Scroll right panel to filters section
+    var section = $('#inspFiltersSection');
+    if (section) {
+      var body = $('#inspFiltersBody');
+      if (body.classList.contains('hidden')) {
+        body.classList.remove('hidden');
+        $('#inspFiltersChevron').classList.remove('bi-chevron-right');
+        $('#inspFiltersChevron').classList.add('bi-chevron-down');
+      }
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  function ctxRemoveBg() {
+    if (ctxTarget) removeImageBackground(ctxTarget.id);
+  }
+
   // -- Print Choice Dialog (Configurar / Imprimir / Cancelar) --
   function showPrintChoiceDialog() {
     return new Promise(function(resolve) {
@@ -2757,17 +2818,25 @@
     $('#btnPageNext').addEventListener('click', () => goToPage(currentPage + 1));
     $('#btnPageLast').addEventListener('click', () => goToPage(totalPages - 1));
 
-    // Image Editor
-    $('#btnEditImage').addEventListener('click', function() {
-      if (editorImageId !== null) { closeImageEditor(); } else { openImageEditor(); }
+    // Inspector filter sliders
+    var inspFilterSliders = '#inspBrightness,#inspContrast,#inspSaturate,#inspHueRotate,#inspGrayscale,#inspSepia,#inspBlur,#inspInvert,#inspOpacity';
+    inspFilterSliders.split(',').forEach(function(sel) {
+      $(sel).addEventListener('input', onInspectorFilterInput);
     });
-    $('#btnEditorClose').addEventListener('click', closeImageEditor);
-    $('#btnEditorReset').addEventListener('click', editorReset);
-    $('#btnEditorApply').addEventListener('click', editorApply);
-    var editorSliders = '#edBrightness,#edContrast,#edSaturate,#edHueRotate,#edGrayscale,#edSepia,#edBlur,#edInvert,#edOpacity';
-    editorSliders.split(',').forEach(function(sel) {
-      $(sel).addEventListener('input', onEditorSliderInput);
+    $('#btnInspFilterReset').addEventListener('click', inspectorFilterReset);
+
+    // Filters section toggle (collapsible)
+    $('#inspFiltersToggle').addEventListener('click', function() {
+      var body = $('#inspFiltersBody');
+      var chev = $('#inspFiltersChevron');
+      body.classList.toggle('hidden');
+      chev.classList.toggle('bi-chevron-down');
+      chev.classList.toggle('bi-chevron-right');
     });
+
+    // Background removal
+    $('#btnRemoveBg').addEventListener('click', function() { removeImageBackground(); });
+    $('#btnRestoreOriginal').addEventListener('click', restoreOriginalImage);
 
     // Context menu actions
     $$('#ctxMenu .ctx-item').forEach(function(btn) {
@@ -2778,6 +2847,8 @@
         else if (action === 'clear') ctxClear();
         else if (action === 'expandH') ctxExpandH();
         else if (action === 'expandV') ctxExpandV();
+        else if (action === 'adjustments') ctxAdjustments();
+        else if (action === 'removebg') ctxRemoveBg();
         hideContextMenu();
       });
     });
@@ -2803,7 +2874,6 @@
         return;
       }
       if (e.key === 'Escape' && moveModeId !== null) { exitMoveMode(); return; }
-      if (e.key === 'Escape' && editorImageId !== null) { closeImageEditor(); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size && !isInput) { e.preventDefault(); removeSelectedImages(); }
       if ((e.key === 'r' || e.key === 'R') && selectedIds.size && !e.ctrlKey && !isInput) {
         selectedIds.forEach(function(sid) {
