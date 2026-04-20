@@ -27,6 +27,9 @@
     <button class="tb-btn" id="btnZoomIn" title="Acercar"><i class="bi bi-plus-lg"></i></button>
     <button class="tb-btn" id="btnZoomFit" title="Ajustar a ventana"><i class="bi bi-arrows-fullscreen"></i></button>
     <div class="tb-sep"></div>
+    <button class="tb-btn" id="btnEditImage" title="Editar imagen: brillo, contraste, saturacion...">
+      <i class="bi bi-sliders2"></i> Editar
+    </button>
     <button class="tb-btn" id="btnPosterMode" title="Modo poster: una imagen en multiples paginas">
       <i class="bi bi-easel"></i> Poster
     </button>
@@ -432,6 +435,70 @@
       </div>
     </div>
   </aside>
+</div>
+  <!-- ============ IMAGE EDITOR PANEL (replaces left panel when active) ============ -->
+  <aside class="editor-panel panel-left panel-editor hidden" id="panelEditor">
+    <div class="panel-header">
+      <i class="bi bi-sliders2"></i> Editor de Imagen
+      <button class="btn-editor-close" id="btnEditorClose" title="Cerrar editor">&times;</button>
+    </div>
+    <div class="panel-section">
+      <div class="editor-preview-thumb" id="editorThumb"></div>
+    </div>
+    <div class="panel-section">
+      <div class="panel-section-title"><i class="bi bi-brightness-high"></i> Ajustes</div>
+      <div class="editor-slider-row">
+        <label>Brillo</label>
+        <input type="range" class="fc editor-range" id="edBrightness" min="0" max="200" value="100">
+        <span class="editor-range-val" id="edBrightnessVal">100%</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Contraste</label>
+        <input type="range" class="fc editor-range" id="edContrast" min="0" max="200" value="100">
+        <span class="editor-range-val" id="edContrastVal">100%</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Saturacion</label>
+        <input type="range" class="fc editor-range" id="edSaturate" min="0" max="200" value="100">
+        <span class="editor-range-val" id="edSaturateVal">100%</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Tono</label>
+        <input type="range" class="fc editor-range" id="edHueRotate" min="0" max="360" value="0">
+        <span class="editor-range-val" id="edHueRotateVal">0&deg;</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Blanco y Negro</label>
+        <input type="range" class="fc editor-range" id="edGrayscale" min="0" max="100" value="0">
+        <span class="editor-range-val" id="edGrayscaleVal">0%</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Sepia</label>
+        <input type="range" class="fc editor-range" id="edSepia" min="0" max="100" value="0">
+        <span class="editor-range-val" id="edSepiaVal">0%</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Desenfoque</label>
+        <input type="range" class="fc editor-range" id="edBlur" min="0" max="10" value="0" step="0.5">
+        <span class="editor-range-val" id="edBlurVal">0px</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Invertir</label>
+        <input type="range" class="fc editor-range" id="edInvert" min="0" max="100" value="0">
+        <span class="editor-range-val" id="edInvertVal">0%</span>
+      </div>
+      <div class="editor-slider-row">
+        <label>Opacidad</label>
+        <input type="range" class="fc editor-range" id="edOpacity" min="0" max="100" value="100">
+        <span class="editor-range-val" id="edOpacityVal">100%</span>
+      </div>
+    </div>
+    <div class="panel-section" style="display:flex;gap:6px">
+      <button class="btn btn-outline btn-block" id="btnEditorReset"><i class="bi bi-arrow-counterclockwise"></i> Resetear</button>
+      <button class="btn btn-primary btn-block" id="btnEditorApply"><i class="bi bi-check-lg"></i> Aplicar</button>
+    </div>
+  </aside>
+
 </div>
 <input type="file" id="fileInput" multiple accept="image/*" style="display:none">
 

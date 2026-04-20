@@ -20,6 +20,7 @@
   let totalPages = 1;
   let moveModeId = null;
   let moveTimer = null;
+  let editorImageId = null; // ID of image being edited in image editor
 
   function imageCount() { return images.filter(function(i) { return i !== null; }).length; }
   function trimTrailingNulls() { while (images.length > 0 && images[images.length - 1] === null) images.pop(); }
@@ -973,6 +974,153 @@
   }
 
   // -- Render --
+  // -- Image Filter Helpers --
+  var FILTER_DEFAULTS = {
+    brightness: 100, contrast: 100, saturate: 100, hueRotate: 0,
+    grayscale: 0, sepia: 0, blur: 0, invert: 0, opacity: 100
+  };
+
+  function buildFilterString(f) {
+    if (!f) return '';
+    var parts = [];
+    if (f.brightness !== undefined && f.brightness !== 100) parts.push('brightness(' + f.brightness + '%)');
+    if (f.contrast !== undefined && f.contrast !== 100) parts.push('contrast(' + f.contrast + '%)');
+    if (f.saturate !== undefined && f.saturate !== 100) parts.push('saturate(' + f.saturate + '%)');
+    if (f.hueRotate !== undefined && f.hueRotate !== 0) parts.push('hue-rotate(' + f.hueRotate + 'deg)');
+    if (f.grayscale !== undefined && f.grayscale !== 0) parts.push('grayscale(' + f.grayscale + '%)');
+    if (f.sepia !== undefined && f.sepia !== 0) parts.push('sepia(' + f.sepia + '%)');
+    if (f.blur !== undefined && f.blur !== 0) parts.push('blur(' + f.blur + 'px)');
+    if (f.invert !== undefined && f.invert !== 0) parts.push('invert(' + f.invert + '%)');
+    if (f.opacity !== undefined && f.opacity !== 100) parts.push('opacity(' + f.opacity + '%)');
+    return parts.join(' ');
+  }
+
+  function hasFilters(img) {
+    var f = img && img.overrides && img.overrides.filters;
+    if (!f) return false;
+    for (var k in FILTER_DEFAULTS) {
+      if (f[k] !== undefined && f[k] !== FILTER_DEFAULTS[k]) return true;
+    }
+    return false;
+  }
+
+  function openImageEditor(imgId) {
+    var img = imgId !== undefined
+      ? images.find(function(i) { return i !== null && i.id === imgId; })
+      : null;
+    // If no specific id, try selected image
+    if (!img && selectedIds.size === 1) {
+      var sid = selectedIds.values().next().value;
+      img = images.find(function(i) { return i !== null && i.id === sid; });
+    }
+    // In poster mode, use the first (only) image
+    if (!img && $('#posterEnabled').checked) {
+      img = images.find(function(i) { return i !== null; });
+    }
+    if (!img) {
+      showToast('Selecciona una imagen primero');
+      return;
+    }
+    editorImageId = img.id;
+    // Show editor panel, hide left panel
+    $('#panelLeft').classList.add('hidden');
+    $('#panelEditor').classList.remove('hidden');
+    $('#btnEditImage').classList.add('tb-active');
+    // Thumb
+    var f = img.overrides.filters || {};
+    var thumbImg = document.createElement('img');
+    thumbImg.src = img.src;
+    var filterStr = buildFilterString(f);
+    if (filterStr) thumbImg.style.filter = filterStr;
+    $('#editorThumb').innerHTML = '';
+    $('#editorThumb').appendChild(thumbImg);
+    // Set slider values
+    $('#edBrightness').value = f.brightness !== undefined ? f.brightness : 100;
+    $('#edContrast').value = f.contrast !== undefined ? f.contrast : 100;
+    $('#edSaturate').value = f.saturate !== undefined ? f.saturate : 100;
+    $('#edHueRotate').value = f.hueRotate !== undefined ? f.hueRotate : 0;
+    $('#edGrayscale').value = f.grayscale !== undefined ? f.grayscale : 0;
+    $('#edSepia').value = f.sepia !== undefined ? f.sepia : 0;
+    $('#edBlur').value = f.blur !== undefined ? f.blur : 0;
+    $('#edInvert').value = f.invert !== undefined ? f.invert : 0;
+    $('#edOpacity').value = f.opacity !== undefined ? f.opacity : 100;
+    updateEditorLabels();
+  }
+
+  function closeImageEditor() {
+    editorImageId = null;
+    $('#panelEditor').classList.add('hidden');
+    $('#panelLeft').classList.remove('hidden');
+    $('#btnEditImage').classList.remove('tb-active');
+  }
+
+  function getEditorFilters() {
+    return {
+      brightness: parseFloat($('#edBrightness').value),
+      contrast: parseFloat($('#edContrast').value),
+      saturate: parseFloat($('#edSaturate').value),
+      hueRotate: parseFloat($('#edHueRotate').value),
+      grayscale: parseFloat($('#edGrayscale').value),
+      sepia: parseFloat($('#edSepia').value),
+      blur: parseFloat($('#edBlur').value),
+      invert: parseFloat($('#edInvert').value),
+      opacity: parseFloat($('#edOpacity').value),
+    };
+  }
+
+  function updateEditorLabels() {
+    $('#edBrightnessVal').textContent = $('#edBrightness').value + '%';
+    $('#edContrastVal').textContent = $('#edContrast').value + '%';
+    $('#edSaturateVal').textContent = $('#edSaturate').value + '%';
+    $('#edHueRotateVal').innerHTML = $('#edHueRotate').value + '&deg;';
+    $('#edGrayscaleVal').textContent = $('#edGrayscale').value + '%';
+    $('#edSepiaVal').textContent = $('#edSepia').value + '%';
+    $('#edBlurVal').textContent = $('#edBlur').value + 'px';
+    $('#edInvertVal').textContent = $('#edInvert').value + '%';
+    $('#edOpacityVal').textContent = $('#edOpacity').value + '%';
+  }
+
+  function onEditorSliderInput() {
+    updateEditorLabels();
+    var filters = getEditorFilters();
+    // Live preview on thumb
+    var thumbImg = $('#editorThumb img');
+    if (thumbImg) thumbImg.style.filter = buildFilterString(filters);
+    // Live preview on canvas
+    if (editorImageId !== null) {
+      var img = images.find(function(i) { return i !== null && i.id === editorImageId; });
+      if (img) {
+        img.overrides.filters = filters;
+        render();
+      }
+    }
+  }
+
+  function editorReset() {
+    $('#edBrightness').value = 100;
+    $('#edContrast').value = 100;
+    $('#edSaturate').value = 100;
+    $('#edHueRotate').value = 0;
+    $('#edGrayscale').value = 0;
+    $('#edSepia').value = 0;
+    $('#edBlur').value = 0;
+    $('#edInvert').value = 0;
+    $('#edOpacity').value = 100;
+    onEditorSliderInput();
+  }
+
+  function editorApply() {
+    if (editorImageId !== null) {
+      var img = images.find(function(i) { return i !== null && i.id === editorImageId; });
+      if (img) {
+        img.overrides.filters = getEditorFilters();
+        render();
+      }
+    }
+    closeImageEditor();
+    showToast('Filtros aplicados');
+  }
+
   function render() {
     const cfg = getConfig();
     if (cfg.posterEnabled) {
@@ -1038,7 +1186,8 @@
             'height:' + (pageH * posterRows) + 'px;' +
             'object-fit:cover;' +
             'margin-left:-' + (pc * pageW) + 'px;' +
-            'margin-top:-' + (pr * pageH) + 'px;';
+            'margin-top:-' + (pr * pageH) + 'px;' +
+            (buildFilterString(img.overrides && img.overrides.filters) ? 'filter:' + buildFilterString(img.overrides.filters) + ';' : '');
           var content = document.createElement('div');
           content.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;';
           content.appendChild(imgEl);
@@ -1330,8 +1479,10 @@
           var zoomFactor = (ov.zoom || 100) / 100;
 
           // Image fills cell via object-fit; zoom/pan applied via CSS transform
+          var filterStr = buildFilterString(ov.filters);
           imgEl.style.cssText = 'display:block;width:100%;height:100%;' +
-            'object-fit:' + fit + ';transform-origin:center center;';
+            'object-fit:' + fit + ';transform-origin:center center;' +
+            (filterStr ? 'filter:' + filterStr + ';' : '');
 
           // Clamp pan offsets (screen-space px) to zoomed overflow
           var maxPanX = Math.max(0, (zoomFactor - 1) * cw / 2);
@@ -1809,6 +1960,8 @@
       try {
         var imgEl = await loadImageEl(img.src);
         ctx.save();
+        var canvasFilterStr = buildFilterString(ov.filters);
+        if (canvasFilterStr) ctx.filter = canvasFilterStr;
         ctx.translate(cx + cw / 2, imgCy + imgCh / 2);
         if (ox !== 0 || oy !== 0) ctx.translate(ox, oy);
         if (zoomFactor !== 1) ctx.scale(zoomFactor, zoomFactor);
@@ -1914,7 +2067,7 @@
     return btoa(binary);
   }
 
-  async function renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, col, row, dpi) {
+  async function renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, col, row, dpi, filters) {
     var scale = dpi / 96;
     var canvas = document.createElement('canvas');
     canvas.width = Math.round(pageW * scale);
@@ -1925,6 +2078,10 @@
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.scale(scale, scale);
+
+    // Apply image filters
+    var posterFilterStr = buildFilterString(filters);
+    if (posterFilterStr) ctx.filter = posterFilterStr;
 
     // Full poster dimensions
     var fullW = pageW * posterCols;
@@ -2177,7 +2334,8 @@
         var col = pageIndex % posterCols;
         var row = Math.floor(pageIndex / posterCols);
         var imgEl = await loadImageEl(images[0].src);
-        canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, col, row, PRINT_DPI);
+        var posterFilters = images[0].overrides ? images[0].overrides.filters : null;
+        canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, col, row, PRINT_DPI, posterFilters);
       } else {
         var layout = Engine.computeLayout(cfg);
         var allPages = Engine.paginate(images, layout);
@@ -2235,13 +2393,14 @@
         var totalPosterPages = posterCols * posterRows;
 
         var imgEl = await loadImageEl(images[0].src);
+        var posterFilters = images[0].overrides ? images[0].overrides.filters : null;
 
         for (var pr = 0; pr < posterRows; pr++) {
           for (var pc = 0; pc < posterCols; pc++) {
             var pi = pr * posterCols + pc;
             btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Pagina ' + (pi + 1) + '/' + totalPosterPages;
             await new Promise(function(r) { setTimeout(r, 10); });
-            var canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, pc, pr, PRINT_DPI);
+            var canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, pc, pr, PRINT_DPI, posterFilters);
             var blob = await new Promise(function(resolve) {
               canvas.toBlob(resolve, 'image/jpeg', 0.92);
             });
@@ -2598,6 +2757,18 @@
     $('#btnPageNext').addEventListener('click', () => goToPage(currentPage + 1));
     $('#btnPageLast').addEventListener('click', () => goToPage(totalPages - 1));
 
+    // Image Editor
+    $('#btnEditImage').addEventListener('click', function() {
+      if (editorImageId !== null) { closeImageEditor(); } else { openImageEditor(); }
+    });
+    $('#btnEditorClose').addEventListener('click', closeImageEditor);
+    $('#btnEditorReset').addEventListener('click', editorReset);
+    $('#btnEditorApply').addEventListener('click', editorApply);
+    var editorSliders = '#edBrightness,#edContrast,#edSaturate,#edHueRotate,#edGrayscale,#edSepia,#edBlur,#edInvert,#edOpacity';
+    editorSliders.split(',').forEach(function(sel) {
+      $(sel).addEventListener('input', onEditorSliderInput);
+    });
+
     // Context menu actions
     $$('#ctxMenu .ctx-item').forEach(function(btn) {
       btn.addEventListener('click', function() {
@@ -2632,6 +2803,7 @@
         return;
       }
       if (e.key === 'Escape' && moveModeId !== null) { exitMoveMode(); return; }
+      if (e.key === 'Escape' && editorImageId !== null) { closeImageEditor(); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size && !isInput) { e.preventDefault(); removeSelectedImages(); }
       if ((e.key === 'r' || e.key === 'R') && selectedIds.size && !e.ctrlKey && !isInput) {
         selectedIds.forEach(function(sid) {
