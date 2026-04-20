@@ -1129,12 +1129,26 @@ input[type="range"].fc:focus { box-shadow: none; }
   top: 0;
   left: 0;
   z-index: 10;
-  cursor: crosshair;
+  cursor: none;
 }
 .img-cell-inner.eraser-active {
   position: relative;
   outline: 2px dashed var(--danger);
   outline-offset: -2px;
+  cursor: none;
+}
+.eraser-cursor {
+  position: fixed;
+  border: 2px solid rgba(255, 0, 0, 0.8);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 10000;
+  opacity: 0;
+  transition: opacity 0.15s;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.5);
+}
+.eraser-cursor.visible {
+  opacity: 1;
 }
 .active-tool {
   background: var(--accent) !important;

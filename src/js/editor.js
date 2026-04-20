@@ -1084,6 +1084,7 @@
   var _eraserCanvas = null;
   var _eraserCtx = null;
   var _eraserDrawing = false;
+  var _eraserCursor = null; // floating brush circle
 
   function removeImageBackground(imgId) {
     if (_bgRemovalBusy) { showToast('Ya hay un proceso en curso'); return; }
@@ -1196,36 +1197,65 @@
     var innerEl = cellEl.querySelector('.img-cell-inner');
     if (!innerEl) { _eraserActive = false; return; }
 
-    // Create overlay canvas matching inner dimensions
-    var rect = innerEl.getBoundingClientRect();
-    var canvas = document.createElement('canvas');
-    canvas.className = 'eraser-canvas';
-    canvas.width = rect.width;
-    canvas.height = rect.height;
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-    innerEl.appendChild(canvas);
-    innerEl.classList.add('eraser-active');
+    // Load the image to get its natural dimensions
+    var probe = new Image();
+    probe.onload = function() {
+      var natW = probe.naturalWidth;
+      var natH = probe.naturalHeight;
+      var dispRect = innerEl.getBoundingClientRect();
 
-    _eraserCanvas = canvas;
-    _eraserCtx = canvas.getContext('2d');
-    _eraserCtx.lineCap = 'round';
-    _eraserCtx.lineJoin = 'round';
+      // Create canvas at FULL image resolution for pixel-perfect erasing
+      var canvas = document.createElement('canvas');
+      canvas.className = 'eraser-canvas';
+      canvas.width = natW;
+      canvas.height = natH;
+      // Display at cell size via CSS
+      canvas.style.width = dispRect.width + 'px';
+      canvas.style.height = dispRect.height + 'px';
+      innerEl.appendChild(canvas);
+      innerEl.classList.add('eraser-active');
 
-    // Draw events on canvas
-    canvas.addEventListener('mousedown', eraserMouseDown);
-    canvas.addEventListener('mousemove', eraserMouseMove);
-    canvas.addEventListener('mouseup', eraserMouseUp);
-    canvas.addEventListener('mouseleave', eraserMouseUp);
-    // Touch support
-    canvas.addEventListener('touchstart', eraserTouchStart, { passive: false });
-    canvas.addEventListener('touchmove', eraserTouchMove, { passive: false });
-    canvas.addEventListener('touchend', eraserMouseUp);
+      _eraserCanvas = canvas;
+      _eraserCtx = canvas.getContext('2d');
+      _eraserCtx.lineCap = 'round';
+      _eraserCtx.lineJoin = 'round';
 
-    // Show controls, update button
-    $('#eraserControls').classList.remove('hidden');
-    $('#btnManualEraser').classList.add('active-tool');
-    showToast('Pinta sobre las areas a borrar');
+      // Create floating brush cursor
+      _eraserCursor = document.createElement('div');
+      _eraserCursor.className = 'eraser-cursor';
+      updateEraserCursorSize();
+      document.body.appendChild(_eraserCursor);
+
+      // Mouse events: mousedown on canvas, move/up on document for drag beyond edges
+      canvas.addEventListener('mousedown', eraserMouseDown);
+      document.addEventListener('mousemove', eraserDocMouseMove);
+      document.addEventListener('mouseup', eraserDocMouseUp);
+      // Touch support
+      canvas.addEventListener('touchstart', eraserTouchStart, { passive: false });
+      document.addEventListener('touchmove', eraserDocTouchMove, { passive: false });
+      document.addEventListener('touchend', eraserDocMouseUp);
+
+      // Show controls, update button
+      $('#eraserControls').classList.remove('hidden');
+      $('#btnManualEraser').classList.add('active-tool');
+      showToast('Pinta sobre las areas a borrar');
+    };
+    probe.src = img.src;
+  }
+
+  function updateEraserCursorSize() {
+    if (!_eraserCursor || !_eraserCanvas) return;
+    var brushScreen = parseInt($('#eraserSize').value) || 20;
+    _eraserCursor.style.width = brushScreen + 'px';
+    _eraserCursor.style.height = brushScreen + 'px';
+  }
+
+  function eraserScreenToCanvas(screenPx) {
+    // Convert screen pixels to canvas (full-res) pixels
+    if (!_eraserCanvas) return screenPx;
+    var dispRect = _eraserCanvas.getBoundingClientRect();
+    var scale = _eraserCanvas.width / dispRect.width;
+    return screenPx * scale;
   }
 
   function eraserMouseDown(e) {
@@ -1234,9 +1264,11 @@
     e.stopPropagation();
     _eraserDrawing = true;
     var pos = getEraserPos(e);
+    var brushScreen = parseInt($('#eraserSize').value) || 20;
+    var brushCanvas = eraserScreenToCanvas(brushScreen);
     _eraserCtx.globalCompositeOperation = 'source-over';
     _eraserCtx.strokeStyle = 'rgba(255, 0, 0, 0.45)';
-    _eraserCtx.lineWidth = parseInt($('#eraserSize').value) || 20;
+    _eraserCtx.lineWidth = brushCanvas;
     _eraserCtx.beginPath();
     _eraserCtx.moveTo(pos.x, pos.y);
     // Draw a dot for single click
@@ -1244,16 +1276,29 @@
     _eraserCtx.stroke();
   }
 
-  function eraserMouseMove(e) {
-    if (!_eraserActive || !_eraserDrawing) return;
-    e.preventDefault();
-    e.stopPropagation();
-    var pos = getEraserPos(e);
-    _eraserCtx.lineTo(pos.x, pos.y);
-    _eraserCtx.stroke();
+  function eraserDocMouseMove(e) {
+    if (!_eraserActive) return;
+    // Update cursor position always (hover)
+    if (_eraserCursor) {
+      var brushScreen = parseInt($('#eraserSize').value) || 20;
+      var dispRect = _eraserCanvas.getBoundingClientRect();
+      _eraserCursor.style.left = (e.clientX - brushScreen / 2) + 'px';
+      _eraserCursor.style.top = (e.clientY - brushScreen / 2) + 'px';
+      // Show only when over the canvas area (with some tolerance)
+      var overCanvas = e.clientX >= dispRect.left && e.clientX <= dispRect.right &&
+                       e.clientY >= dispRect.top && e.clientY <= dispRect.bottom;
+      _eraserCursor.classList.toggle('visible', overCanvas || _eraserDrawing);
+    }
+    // Draw if painting
+    if (_eraserDrawing) {
+      e.preventDefault();
+      var pos = getEraserPos(e);
+      _eraserCtx.lineTo(pos.x, pos.y);
+      _eraserCtx.stroke();
+    }
   }
 
-  function eraserMouseUp(e) {
+  function eraserDocMouseUp(e) {
     if (_eraserDrawing) {
       _eraserDrawing = false;
     }
@@ -1266,18 +1311,19 @@
     if (e.touches.length === 1) {
       _eraserDrawing = true;
       var pos = getEraserPos(e.touches[0]);
+      var brushScreen = parseInt($('#eraserSize').value) || 20;
+      var brushCanvas = eraserScreenToCanvas(brushScreen);
       _eraserCtx.globalCompositeOperation = 'source-over';
       _eraserCtx.strokeStyle = 'rgba(255, 0, 0, 0.45)';
-      _eraserCtx.lineWidth = parseInt($('#eraserSize').value) || 20;
+      _eraserCtx.lineWidth = brushCanvas;
       _eraserCtx.beginPath();
       _eraserCtx.moveTo(pos.x, pos.y);
     }
   }
 
-  function eraserTouchMove(e) {
+  function eraserDocTouchMove(e) {
     if (!_eraserActive || !_eraserDrawing) return;
     e.preventDefault();
-    e.stopPropagation();
     if (e.touches.length === 1) {
       var pos = getEraserPos(e.touches[0]);
       _eraserCtx.lineTo(pos.x, pos.y);
@@ -1287,6 +1333,7 @@
 
   function getEraserPos(e) {
     var rect = _eraserCanvas.getBoundingClientRect();
+    // Map screen coords to full-resolution canvas coords
     return {
       x: (e.clientX - rect.left) * (_eraserCanvas.width / rect.width),
       y: (e.clientY - rect.top) * (_eraserCanvas.height / rect.height)
@@ -1311,8 +1358,7 @@
       // Draw original image
       tCtx.drawImage(tempImg, 0, 0, w, h);
 
-      // Scale eraser overlay to full resolution and use destination-out
-      // This makes painted areas transparent in one fast operation
+      // Eraser canvas is already at full resolution — direct composite
       tCtx.globalCompositeOperation = 'destination-out';
       tCtx.drawImage(_eraserCanvas, 0, 0, w, h);
       tCtx.globalCompositeOperation = 'source-over';
@@ -1336,20 +1382,25 @@
   }
 
   function cleanupEraser() {
+    // Remove document-level listeners
+    document.removeEventListener('mousemove', eraserDocMouseMove);
+    document.removeEventListener('mouseup', eraserDocMouseUp);
+    document.removeEventListener('touchmove', eraserDocTouchMove);
+    document.removeEventListener('touchend', eraserDocMouseUp);
     if (_eraserCanvas) {
       _eraserCanvas.removeEventListener('mousedown', eraserMouseDown);
-      _eraserCanvas.removeEventListener('mousemove', eraserMouseMove);
-      _eraserCanvas.removeEventListener('mouseup', eraserMouseUp);
-      _eraserCanvas.removeEventListener('mouseleave', eraserMouseUp);
       _eraserCanvas.removeEventListener('touchstart', eraserTouchStart);
-      _eraserCanvas.removeEventListener('touchmove', eraserTouchMove);
-      _eraserCanvas.removeEventListener('touchend', eraserMouseUp);
       var parent = _eraserCanvas.parentElement;
       if (parent) {
         parent.removeChild(_eraserCanvas);
         parent.classList.remove('eraser-active');
       }
     }
+    // Remove brush cursor
+    if (_eraserCursor && _eraserCursor.parentElement) {
+      _eraserCursor.parentElement.removeChild(_eraserCursor);
+    }
+    _eraserCursor = null;
     _eraserCanvas = null;
     _eraserCtx = null;
     _eraserActive = false;
@@ -3045,6 +3096,7 @@
     $('#btnEraserCancel').addEventListener('click', cancelManualEraser);
     $('#eraserSize').addEventListener('input', function() {
       $('#eraserSizeVal').textContent = this.value + 'px';
+      updateEraserCursorSize();
     });
 
     // Context menu actions
