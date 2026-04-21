@@ -323,8 +323,6 @@
     $('#pageHeight').disabled = lockDims;
     $('#pageWidth').style.opacity = lockDims ? '0.5' : '1';
     $('#pageHeight').style.opacity = lockDims ? '0.5' : '1';
-    $('#btnPortrait').disabled = lockDims;
-    $('#btnLandscape').disabled = lockDims;
   }
 
   function applyPreset() {
@@ -336,15 +334,11 @@
     const displayUnit = $('#pageUnit').value;
     const w = convertUnit(parseFloat(opt.dataset.w), presetUnit, displayUnit);
     const h = convertUnit(parseFloat(opt.dataset.h), presetUnit, displayUnit);
-    $('#pageWidth').value = w;
-    $('#pageHeight').value = h;
-    if (w <= h) {
-      $('#btnPortrait').classList.add('active');
-      $('#btnLandscape').classList.remove('active');
-    } else {
-      $('#btnLandscape').classList.add('active');
-      $('#btnPortrait').classList.remove('active');
-    }
+    const wantsLandscape = $('#btnLandscape').classList.contains('active');
+    $('#pageWidth').value = wantsLandscape ? Math.max(w, h) : Math.min(w, h);
+    $('#pageHeight').value = wantsLandscape ? Math.min(w, h) : Math.max(w, h);
+    $('#btnPortrait').classList.toggle('active', !wantsLandscape);
+    $('#btnLandscape').classList.toggle('active', wantsLandscape);
     updatePageSummary();
     render();
   }
@@ -1177,6 +1171,30 @@
     updateInspector();
   }
 
+  function getPosterImageBox(imgW, imgH, fullW, fullH) {
+    if (!imgW || !imgH || !fullW || !fullH) {
+      return { drawW: fullW, drawH: fullH, offsetX: 0, offsetY: 0 };
+    }
+
+    var imgRatio = imgW / imgH;
+    var posterRatio = fullW / fullH;
+    var drawW, drawH, offsetX, offsetY;
+
+    if (imgRatio > posterRatio) {
+      drawW = fullW;
+      drawH = fullW / imgRatio;
+      offsetX = 0;
+      offsetY = (fullH - drawH) / 2;
+    } else {
+      drawH = fullH;
+      drawW = fullH * imgRatio;
+      offsetY = 0;
+      offsetX = (fullW - drawW) / 2;
+    }
+
+    return { drawW: drawW, drawH: drawH, offsetX: offsetX, offsetY: offsetY };
+  }
+
   function renderPoster(cfg) {
     const unit = cfg.unit || 'cm';
     const pageW = Engine.toPx(cfg.pageWidth, unit);
@@ -1222,17 +1240,28 @@
           imgEl.alt = img.name || '';
           imgEl.draggable = false;
           imgEl.className = 'poster-img';
-          // The full poster is posterCols*pageW x posterRows*pageH
-          // Each page shows a section: offset by -pc*pageW, -pr*pageH
-          imgEl.style.cssText = 'display:block;position:absolute;top:0;left:0;' +
-            'width:' + (pageW * posterCols) + 'px;' +
-            'height:' + (pageH * posterRows) + 'px;' +
-            'object-fit:cover;' +
-            'margin-left:-' + (pc * pageW) + 'px;' +
-            'margin-top:-' + (pr * pageH) + 'px;' +
-            (buildFilterString(img.overrides && img.overrides.filters) ? 'filter:' + buildFilterString(img.overrides.filters) + ';' : '');
           var content = document.createElement('div');
-          content.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;';
+          var fullW = pageW * posterCols;
+          var fullH = pageH * posterRows;
+          var posterBox = getPosterImageBox(1, 1, fullW, fullH);
+          imgEl.style.cssText = 'display:block;position:absolute;' +
+            'left:' + (posterBox.offsetX - pc * pageW) + 'px;' +
+            'top:' + (posterBox.offsetY - pr * pageH) + 'px;' +
+            'width:' + posterBox.drawW + 'px;' +
+            'height:' + posterBox.drawH + 'px;' +
+            (buildFilterString(img.overrides && img.overrides.filters) ? 'filter:' + buildFilterString(img.overrides.filters) + ';' : '');
+          (function(targetEl, src, targetPc, targetPr, targetPageW, targetPageH, targetFullW, targetFullH) {
+            var probe = new Image();
+            probe.onload = function() {
+              var box = getPosterImageBox(probe.naturalWidth, probe.naturalHeight, targetFullW, targetFullH);
+              targetEl.style.left = (box.offsetX - targetPc * targetPageW) + 'px';
+              targetEl.style.top = (box.offsetY - targetPr * targetPageH) + 'px';
+              targetEl.style.width = box.drawW + 'px';
+              targetEl.style.height = box.drawH + 'px';
+            };
+            probe.src = src;
+          })(imgEl, img.src, pc, pr, pageW, pageH, fullW, fullH);
+          content.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:#fff;';
           content.appendChild(imgEl);
           pageEl.appendChild(content);
 
@@ -1290,7 +1319,19 @@
     // Background image
     var imgEl = document.createElement('img');
     imgEl.src = img.src;
-    imgEl.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;border-radius:4px;';
+    var previewBox = getPosterImageBox(1, 1, previewW, previewH);
+    imgEl.style.cssText = 'position:absolute;left:' + previewBox.offsetX + 'px;top:' + previewBox.offsetY + 'px;width:' + previewBox.drawW + 'px;height:' + previewBox.drawH + 'px;border-radius:4px;background:#fff;';
+    (function(targetEl, src, targetPreviewW, targetPreviewH) {
+      var previewProbe = new Image();
+      previewProbe.onload = function() {
+        var box = getPosterImageBox(previewProbe.naturalWidth, previewProbe.naturalHeight, targetPreviewW, targetPreviewH);
+        targetEl.style.left = box.offsetX + 'px';
+        targetEl.style.top = box.offsetY + 'px';
+        targetEl.style.width = box.drawW + 'px';
+        targetEl.style.height = box.drawH + 'px';
+      };
+      previewProbe.src = src;
+    })(imgEl, img.src, previewW, previewH);
     imgEl.draggable = false;
     container.appendChild(imgEl);
 
@@ -2129,34 +2170,8 @@
     // Full poster dimensions
     var fullW = pageW * posterCols;
     var fullH = pageH * posterRows;
-
-    // Source region from original image for this page
-    var iw = imgEl.naturalWidth;
-    var ih = imgEl.naturalHeight;
-
-    // Cover: fill the full poster area
-    var imgRatio = iw / ih;
-    var posterRatio = fullW / fullH;
-    var sw, sh, sx, sy;
-    if (imgRatio > posterRatio) {
-      sh = ih;
-      sw = ih * posterRatio;
-      sx = (iw - sw) / 2;
-      sy = 0;
-    } else {
-      sw = iw;
-      sh = iw / posterRatio;
-      sx = 0;
-      sy = (ih - sh) / 2;
-    }
-
-    // This page's portion of the source
-    var pageSx = sx + (sw / posterCols) * col;
-    var pageSy = sy + (sh / posterRows) * row;
-    var pageSw = sw / posterCols;
-    var pageSh = sh / posterRows;
-
-    ctx.drawImage(imgEl, pageSx, pageSy, pageSw, pageSh, 0, 0, pageW, pageH);
+    var box = getPosterImageBox(imgEl.naturalWidth, imgEl.naturalHeight, fullW, fullH);
+    ctx.drawImage(imgEl, box.offsetX - col * pageW, box.offsetY - row * pageH, box.drawW, box.drawH);
 
     return canvas;
   }
@@ -2584,6 +2599,11 @@
       }
     } else {
       layoutSection.classList.remove('poster-disabled');
+      currentPage = 0;
+      if (!selectedIds.size) {
+        var firstImg = images.find(function(i) { return i !== null; });
+        if (firstImg) selectedIds.add(firstImg.id);
+      }
     }
   }
 
