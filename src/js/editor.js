@@ -2630,8 +2630,9 @@
   // -- Events --
   function bindEvents() {
     // Toolbar
-    $('#btnAddImages').addEventListener('click', () => fileInput.click());
+    $('#btnAddImages').addEventListener('click', () => { _insertAtSlot = -1; fileInput.click(); });
     fileInput.addEventListener('change', handleFileInputChange);
+    fileInput.addEventListener('cancel', function() { _insertAtSlot = -1; });
     $('#btnPaste').addEventListener('click', async () => {
       try {
         const items = await navigator.clipboard.read();
