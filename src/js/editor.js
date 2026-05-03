@@ -433,6 +433,74 @@
     });
   }
 
+  // -- Auto-updater --
+  var _pendingUpdate = null;
+
+  async function checkForUpdates() {
+    if (!window.__TAURI__) {
+      showToast('Actualizaciones solo disponibles en la app de escritorio.');
+      return;
+    }
+    var modal = $('#modalUpdate');
+    modal.style.display = 'flex';
+    $('#updateStatus').textContent = 'Verificando actualizaciones...';
+    $('#updateInfo').style.display = 'none';
+    $('#updateProgress').style.display = 'none';
+    $('#updateInstallBtn').style.display = 'none';
+    $('#updateCancelBtn').textContent = 'Cerrar';
+    _pendingUpdate = null;
+
+    try {
+      var update = await window.__TAURI__.updater.check();
+      if (!update) {
+        $('#updateStatus').textContent = '✓ Imprime+ está actualizado.';
+        return;
+      }
+      _pendingUpdate = update;
+      $('#updateStatus').textContent = 'Hay una nueva versión disponible:';
+      $('#updateVersion').textContent = update.version;
+      $('#updateNotes').textContent = update.body || '';
+      $('#updateInfo').style.display = 'block';
+      $('#updateInstallBtn').style.display = 'inline-flex';
+    } catch (err) {
+      $('#updateStatus').textContent = 'Error al verificar: ' + err;
+    }
+  }
+
+  async function installUpdate() {
+    if (!_pendingUpdate) return;
+    $('#updateInstallBtn').style.display = 'none';
+    $('#updateCancelBtn').style.display = 'none';
+    $('#updateProgress').style.display = 'block';
+    $('#updateStatus').textContent = 'Descargando actualización...';
+
+    var downloaded = 0;
+    var total = 0;
+    try {
+      await _pendingUpdate.downloadAndInstall(function(event) {
+        if (event.event === 'Started') {
+          total = (event.data && event.data.contentLength) || 0;
+        } else if (event.event === 'Progress') {
+          downloaded += (event.data && event.data.chunkLength) || 0;
+          if (total > 0) {
+            var pct = Math.min(99, Math.round((downloaded / total) * 100));
+            $('#updateProgressBar').style.width = pct + '%';
+            $('#updateProgressText').textContent = pct + '%';
+            $('#updateStatus').textContent = 'Descargando... ' + pct + '%';
+          }
+        } else if (event.event === 'Finished') {
+          $('#updateProgressBar').style.width = '100%';
+          $('#updateProgressText').textContent = '100%';
+          $('#updateStatus').textContent = 'Instalando... la aplicación se reiniciará automáticamente.';
+        }
+      });
+      await window.__TAURI__.process.relaunch();
+    } catch (err) {
+      $('#updateStatus').textContent = 'Error durante la actualización: ' + err;
+      $('#updateCancelBtn').style.display = 'inline-block';
+    }
+  }
+
   async function addImagesFromArchive() {
     if (!window.__TAURI__) {
       alert('La extracción de archivos comprimidos solo está disponible en la app de escritorio.');
@@ -2682,6 +2750,10 @@
     // Toolbar
     $('#btnAddImages').addEventListener('click', () => { _insertAtSlot = -1; fileInput.click(); });
     $('#btnAddArchive').addEventListener('click', addImagesFromArchive);
+    $('#btnCheckUpdate').addEventListener('click', checkForUpdates);
+    $('#updateInstallBtn').addEventListener('click', installUpdate);
+    $('#updateCancelBtn').addEventListener('click', function() { $('#modalUpdate').style.display = 'none'; });
+    $('#updateModalClose').addEventListener('click', function() { $('#modalUpdate').style.display = 'none'; });
     fileInput.addEventListener('change', handleFileInputChange);
     fileInput.addEventListener('cancel', function() { _insertAtSlot = -1; });
     $('#btnPaste').addEventListener('click', async () => {

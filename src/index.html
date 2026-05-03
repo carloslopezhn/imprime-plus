@@ -42,6 +42,8 @@
     <div class="tb-sep"></div>
     <button class="tb-btn" id="btnClearConfig" title="Limpiar configuraciones individuales"><i class="bi bi-eraser"></i></button>
     <button class="tb-btn" id="btnClearAll" title="Vaciar todo (imagenes y configuraciones)"><i class="bi bi-trash3"></i> Vaciar</button>
+    <div class="tb-sep"></div>
+    <button class="tb-btn" id="btnCheckUpdate" title="Verificar actualizaciones"><i class="bi bi-cloud-arrow-down"></i></button>
   </div>
 </header>
 
@@ -579,6 +581,36 @@
   <button class="ctx-item" data-action="expandV"><i class="bi bi-arrows-expand"></i> Ampliar verticalmente</button>
   <div class="ctx-sep"></div>
   <button class="ctx-item ctx-danger" data-action="clear"><i class="bi bi-x-circle"></i> Limpiar espacio</button>
+</div>
+
+<!-- Modal: Actualizacion -->
+<div class="modal-backdrop" id="modalUpdate" style="display:none">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-header">
+      <h6><i class="bi bi-cloud-arrow-down"></i> Actualizaciones</h6>
+      <button class="modal-close" id="updateModalClose">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p id="updateStatus" style="margin:0 0 8px">Verificando...</p>
+      <div id="updateInfo" style="display:none;background:var(--bg2,#f5f5f5);border-radius:6px;padding:10px;margin-bottom:8px">
+        <div style="font-size:0.82em;color:var(--muted,#888);margin-bottom:2px">Nueva versión disponible</div>
+        <div style="font-size:1.1em;font-weight:600" id="updateVersion"></div>
+        <div style="font-size:0.82em;color:var(--muted,#888);margin-top:4px" id="updateNotes"></div>
+      </div>
+      <div id="updateProgress" style="display:none">
+        <div style="background:var(--bg2,#e8e8e8);border-radius:99px;height:8px;overflow:hidden;margin-bottom:4px">
+          <div id="updateProgressBar" style="height:100%;width:0%;background:var(--accent,#4a90d9);border-radius:99px;transition:width .2s"></div>
+        </div>
+        <div style="text-align:center;font-size:0.82em;color:var(--muted,#888)" id="updateProgressText">0%</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="updateCancelBtn">Cerrar</button>
+      <button class="btn btn-primary" id="updateInstallBtn" style="display:none">
+        <i class="bi bi-download"></i> Descargar e instalar
+      </button>
+    </div>
+  </div>
 </div>
 
 <script src="js/bg-removal.js"></script>
