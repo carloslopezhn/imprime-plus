@@ -433,6 +433,52 @@
     });
   }
 
+  async function addImagesFromArchive() {
+    if (!window.__TAURI__) {
+      alert('La extracción de archivos comprimidos solo está disponible en la app de escritorio.');
+      return;
+    }
+    var dialogApi = window.__TAURI__.dialog;
+    if (!dialogApi) {
+      alert('Plugin de diálogo no disponible.');
+      return;
+    }
+    var path;
+    try {
+      path = await dialogApi.open({
+        multiple: false,
+        title: 'Seleccionar archivo comprimido',
+        filters: [{ name: 'Archivos comprimidos', extensions: ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz'] }]
+      });
+    } catch (err) {
+      showToast('Error al abrir el diálogo: ' + err);
+      return;
+    }
+    if (!path) return;
+
+    showToast('Extrayendo imágenes...');
+    try {
+      var entries = await window.__TAURI__.core.invoke('extract_archive', { path: path });
+      if (!entries || entries.length === 0) {
+        showToast('No se encontraron imágenes en el archivo.');
+        return;
+      }
+      entries.forEach(function(entry) {
+        images.push({
+          id: ++idCounter,
+          src: entry.data_url,
+          name: entry.name.replace(/\.[^.]+$/, ''),
+          caption: '',
+          overrides: {},
+        });
+      });
+      render();
+      showToast('Se cargaron ' + entries.length + ' imagen(es) del archivo comprimido.');
+    } catch (err) {
+      showToast('Error al extraer: ' + err);
+    }
+  }
+
   var _insertAtSlot = -1;
 
   function createPlacementGrid(cols, rows) {
@@ -782,10 +828,14 @@
     ov.captionEnabled = $('#inspCaptionEnabled').checked;
     const w = parseFloat($('#inspWidth').value);
     const h = parseFloat($('#inspHeight').value);
-    if (w > 0) $('#imgWidth').value = w.toFixed(2);
-    if (h > 0) $('#imgHeight').value = h.toFixed(2);
-    // Switch to size mode so layout reflows with the new dimensions
-    if ($('#layoutMode').value !== 'size') {
+    const currentW = parseFloat(Engine.fromPx(layout.cellW, cfg.unit).toFixed(2));
+    const currentH = parseFloat(Engine.fromPx(layout.cellH, cfg.unit).toFixed(2));
+    const wChanged = w > 0 && Math.abs(w - currentW) > 0.005;
+    const hChanged = h > 0 && Math.abs(h - currentH) > 0.005;
+    if (wChanged) $('#imgWidth').value = w.toFixed(2);
+    if (hChanged) $('#imgHeight').value = h.toFixed(2);
+    // Only switch layout mode when width/height actually changed (not when only zoom changed)
+    if ((wChanged || hChanged) && $('#layoutMode').value !== 'size') {
       $('#layoutMode').value = 'size';
       updateLayoutModeVisibility();
     }
@@ -2631,6 +2681,7 @@
   function bindEvents() {
     // Toolbar
     $('#btnAddImages').addEventListener('click', () => { _insertAtSlot = -1; fileInput.click(); });
+    $('#btnAddArchive').addEventListener('click', addImagesFromArchive);
     fileInput.addEventListener('change', handleFileInputChange);
     fileInput.addEventListener('cancel', function() { _insertAtSlot = -1; });
     $('#btnPaste').addEventListener('click', async () => {

@@ -15,8 +15,9 @@ $TargetDir   = "$ProjectRoot\src-tauri\target\release\bundle\nsis"
 $VPS      = "root@162.222.204.83"
 $RemoteDir = "/root/imprime-plus"
 
-# Ensure PATH
-$env:Path = "C:\Users\cdi\.cargo\bin;C:\Program Files\nodejs;" + $env:Path
+# Ensure PATH — Cargo home fuera de OneDrive para evitar errores de sincronización de nube
+$env:CARGO_HOME = "C:\cargo"
+$env:Path = "C:\cargo\bin;C:\Program Files\nodejs;" + $env:Path
 
 # ---- Read version from tauri.conf.json ----
 $conf = Get-Content $TauriConf -Raw | ConvertFrom-Json
@@ -26,7 +27,7 @@ Write-Host "=== Imprime+ Deploy v$version ===" -ForegroundColor Cyan
 # ---- Step 1: Build with signing ----
 Write-Host "`n[1/5] Building release..." -ForegroundColor Yellow
 $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $KeyFile -Raw)
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "acero20!!!!"
 
 Push-Location $ProjectRoot
 npx tauri build 2>&1

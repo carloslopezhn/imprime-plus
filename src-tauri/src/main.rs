@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod printing;
+mod archive;
 
 fn main() {
     tauri::Builder::default()
@@ -12,6 +13,7 @@ fn main() {
             printing::list_printers,
             printing::print_pages,
             printing::open_printer_config,
+            archive::extract_archive,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
