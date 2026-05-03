@@ -889,6 +889,7 @@
     const img = singleId ? images.find(function(i) { return i !== null && i.id === singleId; }) : null;
     if (!img) return;
     const cfg = getConfig();
+    const layout = Engine.computeLayout(cfg);
 
     img.caption = $('#inspCaption').value;
 
