@@ -26,7 +26,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkzQjg5REM1NDExMTBCMUIKUldRYkN4RkJ4WjI0azBlc0U5aEFsUkEwQkNLWExpWlNDeXJDaG1YWjJKNjRLSEZueXdUTHR1MVUK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU0Q0MzNTNBMEI4MTAwM0QKUldROUFJRUxPalhNNUtGS3FIZTdqZ0pkZXhCR2lla1lOb2J4RW93TEVyV2xCeFZmZ0ZFQUY1enMK",
       "endpoints": [
         "https://imprime.utp.hn/api/update/{{target}}/{{arch}}/{{current_version}}"
       ],
