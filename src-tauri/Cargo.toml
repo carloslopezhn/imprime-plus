@@ -1,6 +1,6 @@
 [package]
 name = "imprime-plus"
-version = "1.9.5"
+version = "1.9.6"
 description = "Imprime+ - Editor de impresion de imagenes"
 authors = ["UTP Honduras"]
 license = "MIT"
@@ -18,7 +18,8 @@ serde_json = "1"
 tauri-plugin-fs = "2.5.0"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+tauri-plugin-single-instance = "2"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "bmp", "webp", "tiff"] }
 base64 = "0.22"
 tauri-plugin-dialog = "2.7.0"
 zip = "2"
