@@ -146,37 +146,45 @@ def delete_preset(preset_id):
 
 # ---------- Update API (Tauri Updater) ----------
 
-@app.route('/api/update/<target>/<arch>/<current_version>')
+@app.route('/api/update/<target>/<arch>/<current_version>', methods=['GET', 'OPTIONS'])
 def check_update(target, arch, current_version):
+    # CORS para que el fetch desde la WebView de Tauri funcione
+    headers = {'Access-Control-Allow-Origin': '*'}
+
+    if request.method == 'OPTIONS':
+        return '', 204, headers
+
     latest = load_latest()
     if not latest:
-        return '', 204
+        return '', 204, headers
 
     try:
         current = Version(current_version.lstrip('v'))
         server = Version(latest['version'].lstrip('v'))
     except Exception:
-        return '', 204
+        return '', 204, headers
 
     if server <= current:
-        return '', 204
+        return '', 204, headers
 
     platform_key = target
     platforms = latest.get('platforms', {})
     if platform_key not in platforms:
-        return '', 204
+        return '', 204, headers
 
     plat = platforms[platform_key]
     if not plat.get('url') or not plat.get('signature'):
-        return '', 204
+        return '', 204, headers
 
-    return jsonify({
-        'version': latest['version'],
-        'notes': latest.get('notes', ''),
-        'pub_date': latest.get('pub_date', ''),
-        'url': plat['url'],
+    resp = jsonify({
+        'version':   latest['version'],
+        'notes':     latest.get('notes', ''),
+        'pub_date':  latest.get('pub_date', ''),
+        'url':       plat['url'],
         'signature': plat['signature'],
     })
+    resp.headers['Access-Control-Allow-Origin'] = '*'
+    return resp
 
 
 # ---------- Download Page ----------

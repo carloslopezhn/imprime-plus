@@ -433,71 +433,170 @@
     });
   }
 
-  // -- Auto-updater --
-  var _pendingUpdate = null;
+  // -- Auto-updater (basado en Rust — sin CORS, errores reales) --
+  var _updateAvailableUrl = null;   // URL de descarga manual (fallback)
+  var _progressUnlisten  = null;    // función para cancelar el listener de progreso
 
   async function checkForUpdates() {
     if (!window.__TAURI__) {
       showToast('Actualizaciones solo disponibles en la app de escritorio.');
       return;
     }
-    var modal = $('#modalUpdate');
-    modal.style.display = 'flex';
-    $('#updateStatus').textContent = 'Verificando actualizaciones...';
-    $('#updateInfo').style.display = 'none';
+    $('#modalUpdate').style.display = 'flex';
+    $('#updateStatus').textContent = 'Verificando...';
+    $('#updateVersionInfo').style.display = 'none';
     $('#updateProgress').style.display = 'none';
     $('#updateInstallBtn').style.display = 'none';
+    $('#updateInstallBtn').textContent = 'Descargar e instalar';
+    $('#updateInstallBtn').dataset.mode = '';
     $('#updateCancelBtn').textContent = 'Cerrar';
-    _pendingUpdate = null;
+    $('#updateCancelBtn').style.display = '';
+    _updateAvailableUrl = null;
 
+    var currentVersion = '?';
+    try { currentVersion = await window.__TAURI__.core.invoke('get_version'); } catch (_) {}
+    $('#currentVersionDisplay').textContent = currentVersion !== '?' ? 'v' + currentVersion : 'Desconocida';
+    $('#serverVersionDisplay').textContent = 'Consultando...';
+    $('#updateVersionInfo').style.display = 'block';
+
+    var updateInfo;
     try {
-      var update = await window.__TAURI__.updater.check();
-      if (!update) {
-        $('#updateStatus').textContent = '✓ Imprime+ está actualizado.';
-        return;
-      }
-      _pendingUpdate = update;
-      $('#updateStatus').textContent = 'Hay una nueva versión disponible:';
-      $('#updateVersion').textContent = update.version;
-      $('#updateNotes').textContent = update.body || '';
-      $('#updateInfo').style.display = 'block';
-      $('#updateInstallBtn').style.display = 'inline-flex';
+      // check_update corre en Rust: HTTP real sin CORS, errores correctos
+      updateInfo = await window.__TAURI__.core.invoke('check_update');
     } catch (err) {
-      $('#updateStatus').textContent = 'Error al verificar: ' + err;
+      var msg = String(err);
+      if (msg === 'sin_conexion' || msg.includes('conexi')) {
+        $('#updateStatus').textContent = '⚠ Sin conexión a internet.';
+        $('#serverVersionDisplay').textContent = 'No disponible';
+      } else {
+        $('#updateStatus').textContent = 'Error al verificar: ' + msg;
+        $('#serverVersionDisplay').textContent = 'Error';
+      }
+      return;
     }
+
+    if (!updateInfo) {
+      // null = sin actualización
+      $('#serverVersionDisplay').textContent = 'v' + currentVersion;
+      $('#updateStatus').textContent = '✓ Imprime+ está actualizado.';
+      return;
+    }
+
+    // Hay actualización
+    var serverVersion = updateInfo.version || '?';
+    var notes = updateInfo.notes || '';
+    _updateAvailableUrl = updateInfo.url || null;
+
+    $('#serverVersionDisplay').textContent = 'v' + serverVersion;
+    if (notes) {
+      $('#updateNotes').textContent = notes;
+      $('#updateNotesRow').style.display = 'block';
+    } else {
+      $('#updateNotesRow').style.display = 'none';
+    }
+    $('#updateStatus').textContent = 'Nueva versión disponible:';
+    $('#updateInstallBtn').textContent = 'Descargar e instalar';
+    $('#updateInstallBtn').style.display = 'inline-flex';
   }
 
   async function installUpdate() {
-    if (!_pendingUpdate) return;
     $('#updateInstallBtn').style.display = 'none';
     $('#updateCancelBtn').style.display = 'none';
     $('#updateProgress').style.display = 'block';
-    $('#updateStatus').textContent = 'Descargando actualización...';
+    $('#updateStatus').textContent = 'Descargando...';
+    $('#updateProgressBar').style.width = '0%';
+    $('#updateProgressText').textContent = '0%';
 
-    var downloaded = 0;
-    var total = 0;
+    // Escuchar eventos de progreso emitidos desde Rust
+    if (_progressUnlisten) { try { _progressUnlisten(); } catch (_) {} }
+    _progressUnlisten = await window.__TAURI__.event.listen('update-progress', function(ev) {
+      var d = ev.payload || {};
+      var pct = d.percent || 0;
+      $('#updateProgressBar').style.width = pct + '%';
+      $('#updateProgressText').textContent = pct + '%';
+      if (d.done) {
+        $('#updateStatus').textContent = 'Instalando... la aplicación se reiniciará.';
+      } else {
+        $('#updateStatus').textContent = 'Descargando... ' + pct + '%';
+      }
+    });
+
     try {
-      await _pendingUpdate.downloadAndInstall(function(event) {
-        if (event.event === 'Started') {
-          total = (event.data && event.data.contentLength) || 0;
-        } else if (event.event === 'Progress') {
-          downloaded += (event.data && event.data.chunkLength) || 0;
-          if (total > 0) {
-            var pct = Math.min(99, Math.round((downloaded / total) * 100));
-            $('#updateProgressBar').style.width = pct + '%';
-            $('#updateProgressText').textContent = pct + '%';
-            $('#updateStatus').textContent = 'Descargando... ' + pct + '%';
-          }
-        } else if (event.event === 'Finished') {
-          $('#updateProgressBar').style.width = '100%';
-          $('#updateProgressText').textContent = '100%';
-          $('#updateStatus').textContent = 'Instalando... la aplicación se reiniciará automáticamente.';
-        }
-      });
-      await window.__TAURI__.process.relaunch();
+      // do_install_update: descarga + verifica firma minisign + lanza instalador (todo en Rust)
+      await window.__TAURI__.core.invoke('do_install_update');
+      $('#updateStatus').textContent = 'Instalación completada. Reiniciando...';
+      setTimeout(function() {
+        window.__TAURI__.process.relaunch().catch(function() {});
+      }, 1500);
     } catch (err) {
-      $('#updateStatus').textContent = 'Error durante la actualización: ' + err;
-      $('#updateCancelBtn').style.display = 'inline-block';
+      if (_progressUnlisten) { try { _progressUnlisten(); } catch (_) {} }
+      var msg = String(err);
+      // Si el instalador Rust falla, ofrecer descarga manual como fallback
+      $('#updateProgress').style.display = 'none';
+      $('#updateCancelBtn').style.display = '';
+      if (_updateAvailableUrl) {
+        $('#updateStatus').textContent = 'Error en instalación automática. Descarga manual disponible.';
+        $('#updateInstallBtn').textContent = 'Descargar manualmente';
+        $('#updateInstallBtn').dataset.mode = 'manual';
+        $('#updateInstallBtn').style.display = 'inline-flex';
+      } else {
+        $('#updateStatus').textContent = 'Error: ' + msg;
+      }
+    }
+  }
+
+  // Extrae un comprimido dado su path (sin abrir diálogo)
+  async function addImagesFromArchivePath(path) {
+    var fname = path.split(/[\\/]/).pop();
+    showToast('Extrayendo ' + fname + '...');
+    try {
+      var entries = await window.__TAURI__.core.invoke('extract_archive', { path: path });
+      if (!entries || entries.length === 0) {
+        showToast('No se encontraron imágenes en ' + fname);
+        return 0;
+      }
+      entries.forEach(function(entry) {
+        images.push({ id: ++idCounter, src: entry.data_url, name: entry.name.replace(/\.[^.]+$/, ''), caption: '', overrides: {} });
+      });
+      return entries.length;
+    } catch (err) {
+      showToast('Error al extraer ' + fname + ': ' + err);
+      return 0;
+    }
+  }
+
+  // Carga una lista de paths (imágenes y/o comprimidos) enviados desde el Explorador
+  async function openFilesFromPaths(paths) {
+    if (!paths || paths.length === 0 || !window.__TAURI__) return;
+    var archiveExts = ['zip', 'rar', '7z', 'tar', 'gz', 'bz2', 'xz', 'tgz', 'tbz2', 'txz'];
+    var imagePaths = [];
+    var archivePaths = [];
+    paths.forEach(function(p) {
+      var ext = (p.split('.').pop() || '').toLowerCase();
+      (archiveExts.includes(ext) ? archivePaths : imagePaths).push(p);
+    });
+
+    var total = 0;
+
+    if (imagePaths.length > 0) {
+      try {
+        var entries = await window.__TAURI__.core.invoke('read_image_files', { paths: imagePaths });
+        entries.forEach(function(e) {
+          images.push({ id: ++idCounter, src: e.data_url, name: e.name.replace(/\.[^.]+$/, ''), caption: '', overrides: {} });
+        });
+        total += entries.length;
+      } catch (err) {
+        showToast('Error al cargar imágenes: ' + err);
+      }
+    }
+
+    for (var ap of archivePaths) {
+      total += await addImagesFromArchivePath(ap);
+    }
+
+    if (total > 0) {
+      render();
+      showToast('Se cargaron ' + total + ' imagen(es).');
     }
   }
 
@@ -1520,26 +1619,22 @@
     }
   }
 
-  function renderNormal(cfg) {
-    const layout = Engine.computeLayout(cfg);
-    const pages = Engine.paginate(images, layout);
-    totalPages = pages.length;
+  function buildPageEl(page, layout, cfg, pi, opts) {
+    var forPrint = !!(opts && opts.forPrint);
+    var isActive = !!(opts && opts.isActive);
+    var totalP = (opts && opts.totalPages) || 1;
+    var zoomLevel = (opts && opts.zoomLevel !== undefined) ? opts.zoomLevel : 1;
 
-    if (currentPage >= totalPages) currentPage = totalPages - 1;
-    if (currentPage < 0) currentPage = 0;
+    const pageEl = document.createElement('div');
+    pageEl.className = 'print-page' + (isActive && !forPrint ? ' active-page' : '');
+    pageEl.style.width = layout.pageW + 'px';
+    pageEl.style.height = layout.pageH + 'px';
+    pageEl.style.transform = 'scale(' + zoomLevel + ')';
 
-    pagesContainer.innerHTML = '';
-
-    pages.forEach((page, pi) => {
-      const pageEl = document.createElement('div');
-      pageEl.className = 'print-page' + (pi === currentPage ? ' active-page' : '');
-      pageEl.style.width = layout.pageW + 'px';
-      pageEl.style.height = layout.pageH + 'px';
-      pageEl.style.transform = 'scale(' + zoom + ')';
-
+    if (!forPrint) {
       const badge = document.createElement('div');
       badge.className = 'page-number-badge';
-      badge.textContent = '-- Pagina ' + (pi + 1) + ' de ' + totalPages + ' --';
+      badge.textContent = '-- Pagina ' + (pi + 1) + ' de ' + totalP + ' --';
       pageEl.appendChild(badge);
 
       var btnPrintPage = document.createElement('button');
@@ -1549,77 +1644,76 @@
       btnPrintPage.dataset.page = pi;
       btnPrintPage.addEventListener('click', function(ev) { ev.stopPropagation(); printSinglePage(parseInt(this.dataset.page)); });
       pageEl.appendChild(btnPrintPage);
+    }
 
-      const content = document.createElement('div');
-      content.className = 'page-content';
-      content.style.padding = layout.marginTop + 'px ' + layout.marginRight + 'px ' + layout.marginBottom + 'px ' + layout.marginLeft + 'px';
-      content.style.gridTemplateColumns = 'repeat(' + layout.cols + ', ' + layout.cellW + 'px)';
-      content.style.gridTemplateRows = 'repeat(' + layout.rows + ', ' + layout.cellH + 'px)';
-      content.style.gap = layout.spacingV + 'px ' + layout.spacingH + 'px';
+    const content = document.createElement('div');
+    content.className = 'page-content';
+    content.style.padding = layout.marginTop + 'px ' + layout.marginRight + 'px ' + layout.marginBottom + 'px ' + layout.marginLeft + 'px';
+    content.style.gridTemplateColumns = 'repeat(' + layout.cols + ', ' + layout.cellW + 'px)';
+    content.style.gridTemplateRows = 'repeat(' + layout.rows + ', ' + layout.cellH + 'px)';
+    content.style.gap = layout.spacingV + 'px ' + layout.spacingH + 'px';
 
-      // Grid alignment from config
-      var galignH = cfg.imgAlignH || 'center';
-      var galignV = cfg.imgAlignV || 'start';
-      var gridAlignMap = { left:'start', center:'center', right:'end', justify:'space-between', top:'start', bottom:'end' };
-      content.style.justifyContent = gridAlignMap[galignH] || 'center';
-      content.style.alignContent = gridAlignMap[galignV] || 'start';
+    var galignH = cfg.imgAlignH || 'center';
+    var galignV = cfg.imgAlignV || 'start';
+    var gridAlignMap = { left:'start', center:'center', right:'end', justify:'space-between', top:'start', bottom:'end' };
+    content.style.justifyContent = gridAlignMap[galignH] || 'center';
+    content.style.alignContent = gridAlignMap[galignV] || 'start';
 
-      // Calculate occupied cells from image spans
-      var occupiedCells = 0;
-      for (var si = 0; si < page.images.length; si++) {
-        var sov = page.images[si] ? (page.images[si].overrides || {}) : {};
-        var scs = Math.min(sov.colSpan || 1, layout.cols);
-        var srs = Math.min(sov.rowSpan || 1, layout.rows);
-        occupiedCells += scs * srs;
-      }
-      var emptyCells = Math.max(0, layout.totalSlots - occupiedCells);
-      var totalCells = page.images.length + emptyCells;
+    var occupiedCells = 0;
+    for (var si = 0; si < page.images.length; si++) {
+      var sov = page.images[si] ? (page.images[si].overrides || {}) : {};
+      var scs = Math.min(sov.colSpan || 1, layout.cols);
+      var srs = Math.min(sov.rowSpan || 1, layout.rows);
+      occupiedCells += scs * srs;
+    }
+    var emptyCells = Math.max(0, layout.totalSlots - occupiedCells);
+    var totalCells = page.images.length + emptyCells;
 
-      var placementGrid = createPlacementGrid(layout.cols, layout.rows);
-      for (let i = 0; i < totalCells; i++) {
-        const img = i < page.images.length ? page.images[i] : null;
-        const cellEl = document.createElement('div');
+    var placementGrid = createPlacementGrid(layout.cols, layout.rows);
+    for (let i = 0; i < totalCells; i++) {
+      const img = i < page.images.length ? page.images[i] : null;
+      const cellEl = document.createElement('div');
 
-        const ov = img ? (img.overrides || {}) : {};
-        const shape = ov.shape || cfg.shape;
-        const border = ov.border ?? cfg.border;
-        const radius = ov.radius ?? cfg.radius;
-        const shadow = cfg.shadow;
-        const fit = ov.fit || cfg.fit;
-        const cellBg = cfg.bgColor;
+      const ov = img ? (img.overrides || {}) : {};
+      const shape = ov.shape || cfg.shape;
+      const border = ov.border ?? cfg.border;
+      const radius = ov.radius ?? cfg.radius;
+      const shadow = cfg.shadow;
+      const fit = ov.fit || cfg.fit;
+      const cellBg = cfg.bgColor;
 
-        cellEl.className = 'img-cell';
-        if (shape !== 'rect') cellEl.classList.add('shape-' + shape);
-        if (shadow !== 'none') cellEl.classList.add('shadow-' + shadow);
+      cellEl.className = 'img-cell';
+      if (shape !== 'rect') cellEl.classList.add('shape-' + shape);
+      if (shadow !== 'none') cellEl.classList.add('shadow-' + shadow);
 
-        var cs = (img && ov.colSpan > 1) ? Math.min(ov.colSpan, layout.cols) : 1;
-        var rs = (img && ov.rowSpan > 1) ? Math.min(ov.rowSpan, layout.rows) : 1;
-        const cw = layout.cellW * cs + layout.spacingH * (cs - 1);
-        const ch = layout.cellH * rs + layout.spacingV * (rs - 1);
-        var pos = placeInGrid(placementGrid, layout.cols, layout.rows, cs, rs);
-        if (!pos) continue;
-        var slotInPage = pos.row * layout.cols + pos.col;
-        var slotAbs = pi * layout.totalSlots + slotInPage;
+      var cs = (img && ov.colSpan > 1) ? Math.min(ov.colSpan, layout.cols) : 1;
+      var rs = (img && ov.rowSpan > 1) ? Math.min(ov.rowSpan, layout.rows) : 1;
+      const cw = layout.cellW * cs + layout.spacingH * (cs - 1);
+      const ch = layout.cellH * rs + layout.spacingV * (rs - 1);
+      var pos = placeInGrid(placementGrid, layout.cols, layout.rows, cs, rs);
+      if (!pos) continue;
+      var slotInPage = pos.row * layout.cols + pos.col;
+      var slotAbs = pi * layout.totalSlots + slotInPage;
 
-        cellEl.style.gridColumnStart = String(pos.col + 1);
-        cellEl.style.gridRowStart = String(pos.row + 1);
+      cellEl.style.gridColumnStart = String(pos.col + 1);
+      cellEl.style.gridRowStart = String(pos.row + 1);
 
-        if (cs > 1) cellEl.style.gridColumn = 'span ' + cs;
-        if (rs > 1) cellEl.style.gridRow = 'span ' + rs;
+      if (cs > 1) cellEl.style.gridColumn = 'span ' + cs;
+      if (rs > 1) cellEl.style.gridRow = 'span ' + rs;
 
-        const imgCaptionEnabled = img
-          ? ((img.overrides && img.overrides.captionEnabled !== undefined) ? img.overrides.captionEnabled : cfg.captionEnabled)
-          : false;
+      const imgCaptionEnabled = img
+        ? ((img.overrides && img.overrides.captionEnabled !== undefined) ? img.overrides.captionEnabled : cfg.captionEnabled)
+        : false;
 
-        cellEl.style.width = cw + 'px';
-        cellEl.style.height = ch + 'px';
-        cellEl.style.background = cellBg;
+      cellEl.style.width = cw + 'px';
+      cellEl.style.height = ch + 'px';
+      cellEl.style.background = cellBg;
 
-        if (img) {
-          cellEl.dataset.id = img.id;
-          if (selectedIds.has(img.id)) cellEl.classList.add('selected');
+      if (img) {
+        cellEl.dataset.id = img.id;
+        if (!forPrint && selectedIds.has(img.id)) cellEl.classList.add('selected');
 
-          // Move checkbox for reorder (top-left corner)
+        if (!forPrint) {
           var moveCheck = document.createElement('div');
           moveCheck.className = 'move-check' + (moveModeId === img.id ? ' active' : '');
           moveCheck.innerHTML = '<i class="bi bi-arrows-move"></i>';
@@ -1630,112 +1724,109 @@
             toggleMoveMode(img.id);
           });
           cellEl.appendChild(moveCheck);
+        }
 
-          const capPos = (ov.captionPosition || cfg.captionPosition);
-          const capFS = (ov.captionFontSize || cfg.captionFontSize);
-          const capFF = (ov.captionFontFamily || cfg.captionFontFamily);
-          const capC = (ov.captionColor || cfg.captionColor);
-          const capBg = (ov.captionBgColor || cfg.captionBgColor);
-          const overlayC = ov.captionOverlayColor || cfg.captionOverlayColor || '#ffffff';
-          const overlayBg = ov.captionOverlayBg || cfg.captionOverlayBg || '#000000';
+        const capPos = (ov.captionPosition || cfg.captionPosition);
+        const capFS = (ov.captionFontSize || cfg.captionFontSize);
+        const capFF = (ov.captionFontFamily || cfg.captionFontFamily);
+        const capC = (ov.captionColor || cfg.captionColor);
+        const capBg = (ov.captionBgColor || cfg.captionBgColor);
+        const overlayC = ov.captionOverlayColor || cfg.captionOverlayColor || '#ffffff';
+        const overlayBg = ov.captionOverlayBg || cfg.captionOverlayBg || '#000000';
 
-          // Caption height for above/below (reduces image area)
-          const captionH = imgCaptionEnabled && capPos !== 'overlay' ? (capFS + 6) : 0;
+        const captionH = imgCaptionEnabled && capPos !== 'overlay' ? (capFS + 6) : 0;
 
-          // Use flex column so above/below captions flow with order
-          if (captionH > 0) {
-            cellEl.style.display = 'flex';
-            cellEl.style.flexDirection = 'column';
-          }
+        if (captionH > 0) {
+          cellEl.style.display = 'flex';
+          cellEl.style.flexDirection = 'column';
+        }
 
-          if (imgCaptionEnabled && capPos === 'above') {
-            const cap = document.createElement('div');
-            cap.className = 'img-caption above';
-            cap.style.fontSize = capFS + 'px';
-            cap.style.fontFamily = capFF;
+        if (imgCaptionEnabled && capPos === 'above') {
+          const cap = document.createElement('div');
+          cap.className = 'img-caption above';
+          cap.style.fontSize = capFS + 'px';
+          cap.style.fontFamily = capFF;
+          cap.style.color = capC;
+          cap.style.background = capBg;
+          cap.style.height = captionH + 'px';
+          cap.style.lineHeight = captionH + 'px';
+          cap.textContent = getCaption(img, i, cfg);
+          cellEl.appendChild(cap);
+        }
+
+        const inner = document.createElement('div');
+        inner.className = 'img-cell-inner';
+        inner.style.width = cw + 'px';
+        inner.style.height = (ch - captionH) + 'px';
+        if (border > 0) {
+          inner.style.border = border + 'px solid ' + cfg.borderColor;
+        }
+        // Inline border-radius only when shape needs it without stomping .shape-circle (50%)
+        if (shape === 'rounded' || (shape === 'rect' && radius > 0)) {
+          inner.style.borderRadius = (radius || 12) + 'px';
+        }
+
+        const imgEl = document.createElement('img');
+        imgEl.src = img.src;
+        imgEl.alt = img.name;
+        imgEl.draggable = false;
+
+        var ox = ov.offsetX || 0;
+        var oy = ov.offsetY || 0;
+        var zoomFactor = (ov.zoom || 100) / 100;
+
+        var filterStr = buildFilterString(ov.filters);
+        imgEl.style.cssText = 'display:block;width:100%;height:100%;' +
+          'object-fit:' + fit + ';transform-origin:center center;' +
+          (filterStr ? 'filter:' + filterStr + ';' : '');
+
+        var maxPanX = Math.max(0, (zoomFactor - 1) * cw / 2);
+        var maxPanY = Math.max(0, (zoomFactor - 1) * ch / 2);
+        var clampedOx = Math.max(-maxPanX, Math.min(maxPanX, ox));
+        var clampedOy = Math.max(-maxPanY, Math.min(maxPanY, oy));
+        if (clampedOx !== ox) { ov.offsetX = Math.round(clampedOx); ox = clampedOx; }
+        if (clampedOy !== oy) { ov.offsetY = Math.round(clampedOy); oy = clampedOy; }
+
+        var transforms = [];
+        if (clampedOx !== 0 || clampedOy !== 0) transforms.push('translate(' + clampedOx + 'px,' + clampedOy + 'px)');
+        if (zoomFactor !== 1) transforms.push('scale(' + zoomFactor + ')');
+        var rot = ov.rotation || 0;
+        if (rot) transforms.push('rotate(' + rot + 'deg)');
+        if (transforms.length) imgEl.style.transform = transforms.join(' ');
+
+        inner.appendChild(imgEl);
+        cellEl.appendChild(inner);
+
+        if (imgCaptionEnabled && (capPos === 'below' || capPos === 'overlay')) {
+          const cap = document.createElement('div');
+          cap.className = 'img-caption ' + capPos;
+          cap.style.fontSize = capFS + 'px';
+          cap.style.fontFamily = capFF;
+          if (capPos === 'overlay') {
+            var hr = parseInt(overlayBg.slice(1,3),16), hg = parseInt(overlayBg.slice(3,5),16), hb = parseInt(overlayBg.slice(5,7),16);
+            cap.style.color = overlayC;
+            cap.style.background = 'rgba(' + hr + ',' + hg + ',' + hb + ',0.55)';
+          } else {
             cap.style.color = capC;
             cap.style.background = capBg;
             cap.style.height = captionH + 'px';
             cap.style.lineHeight = captionH + 'px';
-            cap.textContent = getCaption(img, i, cfg);
+          }
+          cap.textContent = getCaption(img, i, cfg);
+          if (capPos === 'overlay') {
+            inner.appendChild(cap);
+          } else {
             cellEl.appendChild(cap);
           }
+        }
 
-          const inner = document.createElement('div');
-          inner.className = 'img-cell-inner';
-          inner.style.width = cw + 'px';
-          inner.style.height = (ch - captionH) + 'px';
-          if (border > 0) {
-            inner.style.border = border + 'px solid ' + cfg.borderColor;
-          }
-          if (shape === 'rounded' || radius > 0) {
-            inner.style.borderRadius = (radius || 12) + 'px';
-          }
-
-          const imgEl = document.createElement('img');
-          imgEl.src = img.src;
-          imgEl.alt = img.name;
-          imgEl.draggable = false;
-
-          var ox = ov.offsetX || 0;
-          var oy = ov.offsetY || 0;
-          var zoomFactor = (ov.zoom || 100) / 100;
-
-          // Image fills cell via object-fit; zoom/pan applied via CSS transform
-          var filterStr = buildFilterString(ov.filters);
-          imgEl.style.cssText = 'display:block;width:100%;height:100%;' +
-            'object-fit:' + fit + ';transform-origin:center center;' +
-            (filterStr ? 'filter:' + filterStr + ';' : '');
-
-          // Clamp pan offsets (screen-space px) to zoomed overflow
-          var maxPanX = Math.max(0, (zoomFactor - 1) * cw / 2);
-          var maxPanY = Math.max(0, (zoomFactor - 1) * ch / 2);
-          var clampedOx = Math.max(-maxPanX, Math.min(maxPanX, ox));
-          var clampedOy = Math.max(-maxPanY, Math.min(maxPanY, oy));
-          if (clampedOx !== ox) { ov.offsetX = Math.round(clampedOx); ox = clampedOx; }
-          if (clampedOy !== oy) { ov.offsetY = Math.round(clampedOy); oy = clampedOy; }
-
-          // Build transform: translate (screen px) then scale then rotate
-          var transforms = [];
-          if (clampedOx !== 0 || clampedOy !== 0) transforms.push('translate(' + clampedOx + 'px,' + clampedOy + 'px)');
-          if (zoomFactor !== 1) transforms.push('scale(' + zoomFactor + ')');
-          var rot = ov.rotation || 0;
-          if (rot) transforms.push('rotate(' + rot + 'deg)');
-          if (transforms.length) imgEl.style.transform = transforms.join(' ');
-
-          inner.appendChild(imgEl);
-          cellEl.appendChild(inner);
-
-          if (imgCaptionEnabled && (capPos === 'below' || capPos === 'overlay')) {
-            const cap = document.createElement('div');
-            cap.className = 'img-caption ' + capPos;
-            cap.style.fontSize = capFS + 'px';
-            cap.style.fontFamily = capFF;
-            if (capPos === 'overlay') {
-              var hr = parseInt(overlayBg.slice(1,3),16), hg = parseInt(overlayBg.slice(3,5),16), hb = parseInt(overlayBg.slice(5,7),16);
-              cap.style.color = overlayC;
-              cap.style.background = 'rgba(' + hr + ',' + hg + ',' + hb + ',0.55)';
-            } else {
-              cap.style.color = capC;
-              cap.style.background = capBg;
-              cap.style.height = captionH + 'px';
-              cap.style.lineHeight = captionH + 'px';
-            }
-            cap.textContent = getCaption(img, i, cfg);
-            if (capPos === 'overlay') {
-              inner.appendChild(cap);
-            } else {
-              cellEl.appendChild(cap);
-            }
-          }
-
+        if (!forPrint) {
           cellEl.addEventListener('click', (e) => {
             if (_suppressClick || e.defaultPrevented) return;
             if (moveModeId !== null && moveModeId !== img.id) { exitMoveMode(); }
             selectImage(img.id, e.ctrlKey || e.metaKey);
           });
 
-          // Right-click context menu
           cellEl.addEventListener('contextmenu', (function(imgRef) {
             return function(ev) {
               ev.preventDefault();
@@ -1744,7 +1835,6 @@
             };
           })(img));
 
-          // Pan: left-click drag only when zoomed in, or middle-click always
           inner.addEventListener('mousedown', (e) => {
             var currentZoom = (img.overrides && img.overrides.zoom) || 100;
             if (e.button === 1 || (e.button === 0 && currentZoom > 100)) {
@@ -1752,10 +1842,9 @@
             }
           });
 
-          // Wheel zoom on image (no Ctrl = internal zoom, Ctrl = page zoom)
           inner.addEventListener('wheel', (function(imgRef) {
             return function(ev) {
-              if (ev.ctrlKey) return; // let page zoom handle it
+              if (ev.ctrlKey) return;
               ev.preventDefault();
               ev.stopPropagation();
               var ovr = imgRef.overrides;
@@ -1766,7 +1855,6 @@
             };
           })(img), { passive: false });
 
-          // Resize handles (Ctrl = internal zoom)
           ['nw','n','ne','w','e','sw','s','se'].forEach(dir => {
             const handle = document.createElement('div');
             handle.className = 'resize-handle ' + dir;
@@ -1779,8 +1867,10 @@
             });
             cellEl.appendChild(handle);
           });
-        } else {
-          cellEl.classList.add('img-cell-empty');
+        }
+      } else {
+        cellEl.classList.add('img-cell-empty');
+        if (!forPrint) {
           cellEl.style.cursor = 'pointer';
           cellEl.title = 'Clic para agregar imagen';
           (function(targetSlot) {
@@ -1790,24 +1880,41 @@
             });
           })(slotAbs);
         }
-
-        // Cut guides (crop marks at each corner)
-        if (cfg.cutGuides && img) {
-          cellEl.classList.add('cut-guides');
-          ['tl-h','tl-v','tr-h','tr-v','bl-h','bl-v','br-h','br-v'].forEach(function(cls) {
-            var m = document.createElement('div');
-            m.className = 'cut-guide-mark ' + cls;
-            cellEl.appendChild(m);
-          });
-        }
-
-        content.appendChild(cellEl);
       }
 
-      pageEl.appendChild(content);
-      pagesContainer.appendChild(pageEl);
-    });
+      if (cfg.cutGuides && img) {
+        cellEl.classList.add('cut-guides');
+        ['tl-h','tl-v','tr-h','tr-v','bl-h','bl-v','br-h','br-v'].forEach(function(cls) {
+          var m = document.createElement('div');
+          m.className = 'cut-guide-mark ' + cls;
+          cellEl.appendChild(m);
+        });
+      }
 
+      content.appendChild(cellEl);
+    }
+
+    pageEl.appendChild(content);
+    return pageEl;
+  }
+
+  function renderNormal(cfg) {
+    const layout = Engine.computeLayout(cfg);
+    const pages = Engine.paginate(images, layout);
+    totalPages = pages.length;
+
+    if (currentPage >= totalPages) currentPage = totalPages - 1;
+    if (currentPage < 0) currentPage = 0;
+
+    pagesContainer.innerHTML = '';
+    pages.forEach((page, pi) => {
+      pagesContainer.appendChild(buildPageEl(page, layout, cfg, pi, {
+        forPrint: false,
+        isActive: pi === currentPage,
+        totalPages: pages.length,
+        zoomLevel: zoom
+      }));
+    });
     updatePageNav();
   }
 
@@ -1994,270 +2101,57 @@
     });
   }
 
-  function drawFitCanvas(ctx, imgEl, x, y, w, h, fit) {
-    var iw = imgEl.naturalWidth;
-    var ih = imgEl.naturalHeight;
-    if (fit === 'fill') {
-      ctx.drawImage(imgEl, x, y, w, h);
-    } else if (fit === 'contain') {
-      var ir = iw / ih;
-      var cr = w / h;
-      var dw, dh, dx, dy;
-      if (ir > cr) { dw = w; dh = w / ir; dx = x; dy = y + (h - dh) / 2; }
-      else { dh = h; dw = h * ir; dx = x + (w - dw) / 2; dy = y; }
-      ctx.drawImage(imgEl, dx, dy, dw, dh);
-    } else { // cover
-      var ir2 = iw / ih;
-      var cr2 = w / h;
-      var sw, sh, sx, sy;
-      if (ir2 > cr2) { sh = ih; sw = ih * cr2; sx = (iw - sw) / 2; sy = 0; }
-      else { sw = iw; sh = iw / cr2; sx = 0; sy = (ih - sh) / 2; }
-      ctx.drawImage(imgEl, sx, sy, sw, sh, x, y, w, h);
-    }
-  }
-
-  function clipShape(ctx, shape, x, y, w, h, radius) {
-    ctx.beginPath();
-    if (shape === 'circle') {
-      ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-    } else if (shape === 'hexagon') {
-      var cx = x + w / 2, cy = y + h / 2;
-      ctx.moveTo(cx, y);
-      ctx.lineTo(x + w, y + h * 0.25);
-      ctx.lineTo(x + w, y + h * 0.75);
-      ctx.lineTo(cx, y + h);
-      ctx.lineTo(x, y + h * 0.75);
-      ctx.lineTo(x, y + h * 0.25);
-    } else if (shape === 'star') {
-      var pts = [[50,0],[61,35],[98,35],[68,57],[79,91],[50,70],[21,91],[32,57],[2,35],[39,35]];
-      pts.forEach(function(p, i) {
-        var px = x + w * p[0] / 100, py = y + h * p[1] / 100;
-        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-      });
-    } else if (shape === 'rounded' || (radius && radius > 0)) {
-      var r = radius || 12;
-      ctx.moveTo(x + r, y);
-      ctx.lineTo(x + w - r, y);
-      ctx.arcTo(x + w, y, x + w, y + r, r);
-      ctx.lineTo(x + w, y + h - r);
-      ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-      ctx.lineTo(x + r, y + h);
-      ctx.arcTo(x, y + h, x, y + h - r, r);
-      ctx.lineTo(x, y + r);
-      ctx.arcTo(x, y, x + r, y, r);
-    } else {
-      ctx.rect(x, y, w, h);
-    }
-    ctx.closePath();
-    ctx.clip();
-  }
-
+  // Rasterize the same DOM the editor renders for the preview, via html2canvas.
+  // Guarantees WYSIWYG: print is a pixel image of the on-screen layout.
   async function renderPageToCanvas(pageImages, layout, cfg, dpi) {
+    if (typeof html2canvas === 'undefined') {
+      throw new Error('html2canvas no está cargado');
+    }
     var scale = dpi / 96;
-    var canvas = document.createElement('canvas');
-    canvas.width = Math.round(layout.pageW * scale);
-    canvas.height = Math.round(layout.pageH * scale);
-    var ctx = canvas.getContext('2d');
 
-    // White background
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.scale(scale, scale);
+    var pageEl = buildPageEl({ images: pageImages }, layout, cfg, 0, {
+      forPrint: true,
+      isActive: false,
+      totalPages: 1,
+      zoomLevel: 1,
+    });
 
-    // Grid alignment
-    var galignH = cfg.imgAlignH || 'center';
-    var galignV = cfg.imgAlignV || 'start';
+    var host = document.createElement('div');
+    host.style.cssText =
+      'position:fixed;left:-100000px;top:0;width:' + layout.pageW + 'px;' +
+      'height:' + layout.pageH + 'px;pointer-events:none;background:#ffffff;';
+    host.appendChild(pageEl);
+    document.body.appendChild(host);
 
-    // Compute total grid size
-    var gridW = layout.cols * layout.cellW + (layout.cols - 1) * layout.spacingH;
-    var gridH = layout.rows * layout.cellH + (layout.rows - 1) * layout.spacingV;
-    var contentW = layout.pageW - layout.marginLeft - layout.marginRight;
-    var contentH = layout.pageH - layout.marginTop - layout.marginBottom;
+    try {
+      var imgs = pageEl.querySelectorAll('img');
+      await Promise.all(Array.prototype.map.call(imgs, function(im) {
+        if (im.complete && im.naturalWidth > 0) return Promise.resolve();
+        if (typeof im.decode === 'function') {
+          return im.decode().catch(function() { return null; });
+        }
+        return new Promise(function(resolve) {
+          im.addEventListener('load', resolve, { once: true });
+          im.addEventListener('error', resolve, { once: true });
+        });
+      }));
 
-    // Alignment offsets
-    var offsetX = 0, offsetY = 0;
-    if (galignH === 'center') offsetX = (contentW - gridW) / 2;
-    else if (galignH === 'right' || galignH === 'end') offsetX = contentW - gridW;
-    else if (galignH === 'justify' || galignH === 'space-between') offsetX = 0; // handled via spacing
-    if (galignV === 'center') offsetY = (contentH - gridH) / 2;
-    else if (galignV === 'bottom' || galignV === 'end') offsetY = contentH - gridH;
-
-    var spacingH = layout.spacingH;
-    var spacingV = layout.spacingV;
-    if (galignH === 'justify' || galignH === 'space-between') {
-      if (layout.cols > 1) spacingH = (contentW - layout.cols * layout.cellW) / (layout.cols - 1);
-      else offsetX = (contentW - gridW) / 2;
+      var canvas = await html2canvas(pageEl, {
+        scale: scale,
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 0,
+        logging: false,
+        width: layout.pageW,
+        height: layout.pageH,
+        windowWidth: layout.pageW,
+        windowHeight: layout.pageH,
+      });
+      return canvas;
+    } finally {
+      document.body.removeChild(host);
     }
-
-    // Grid placement tracker for spanning
-    var printGrid = [];
-    for (var gr = 0; gr < layout.rows; gr++) printGrid.push(new Array(layout.cols).fill(false));
-
-    for (var i = 0; i < pageImages.length; i++) {
-      var img = pageImages[i];
-      if (!img) continue;
-
-      var ov = img.overrides || {};
-      var cs = (ov.colSpan > 1) ? Math.min(ov.colSpan, layout.cols) : 1;
-      var rs = (ov.rowSpan > 1) ? Math.min(ov.rowSpan, layout.rows) : 1;
-
-      // Find placement in grid (dense algorithm)
-      var col = -1, row = -1;
-      for (var pr = 0; pr <= layout.rows - rs && col === -1; pr++) {
-        for (var pc = 0; pc <= layout.cols - cs && col === -1; pc++) {
-          var canFit = true;
-          for (var dr = 0; dr < rs && canFit; dr++) {
-            for (var dc = 0; dc < cs && canFit; dc++) {
-              if (printGrid[pr + dr][pc + dc]) canFit = false;
-            }
-          }
-          if (canFit) {
-            col = pc; row = pr;
-            for (var dr = 0; dr < rs; dr++)
-              for (var dc = 0; dc < cs; dc++)
-                printGrid[row + dr][col + dc] = true;
-          }
-        }
-      }
-      if (col === -1) continue; // shouldn't happen since paginate already checked
-
-      var cx = layout.marginLeft + offsetX + col * (layout.cellW + spacingH);
-      var cy = layout.marginTop + offsetY + row * (layout.cellH + spacingV);
-
-      var cw = layout.cellW * cs + spacingH * (cs - 1);
-      var ch = layout.cellH * rs + spacingV * (rs - 1);
-
-      var fit = ov.fit || cfg.fit;
-      var zoomFactor = (ov.zoom || 100) / 100;
-      var ox = ov.offsetX || 0;
-      var oy = ov.offsetY || 0;
-      var rot = ov.rotation || 0;
-      var border = ov.border !== undefined && ov.border !== null ? ov.border : cfg.border;
-      var borderColor = cfg.borderColor;
-      var shape = ov.shape || cfg.shape;
-      var radius = ov.radius !== undefined && ov.radius !== null ? ov.radius : cfg.radius;
-      var cellBg = cfg.bgColor;
-
-      // Caption metrics for above/below
-      var captionEnabled = (ov.captionEnabled !== undefined) ? ov.captionEnabled : cfg.captionEnabled;
-      var capPos = ov.captionPosition || cfg.captionPosition;
-      var capFS = ov.captionFontSize || cfg.captionFontSize;
-      var capH = capFS + 6;
-      var captionH = captionEnabled && capPos !== 'overlay' ? capH : 0;
-      var imgCy = capPos === 'above' ? cy + captionH : cy;
-      var imgCh = ch - captionH;
-
-      // Cell background + clip
-      ctx.save();
-      ctx.fillStyle = cellBg;
-      clipShape(ctx, shape, cx, imgCy, cw, imgCh, radius);
-      ctx.fill();
-
-      // Clamp pan offsets to zoomed overflow (match screen clamping)
-      var maxPanX = Math.max(0, (zoomFactor - 1) * cw / 2);
-      var maxPanY = Math.max(0, (zoomFactor - 1) * imgCh / 2);
-      ox = Math.max(-maxPanX, Math.min(maxPanX, ox));
-      oy = Math.max(-maxPanY, Math.min(maxPanY, oy));
-
-      // Draw image — transform order matches CSS: translate(ox,oy) scale(zoom) rotate(rot) with transform-origin center
-      try {
-        var imgEl = await loadImageEl(img.src);
-        ctx.save();
-        var canvasFilterStr = buildFilterString(ov.filters);
-        if (canvasFilterStr) ctx.filter = canvasFilterStr;
-        ctx.translate(cx + cw / 2, imgCy + imgCh / 2);
-        if (ox !== 0 || oy !== 0) ctx.translate(ox, oy);
-        if (zoomFactor !== 1) ctx.scale(zoomFactor, zoomFactor);
-        if (rot) ctx.rotate(rot * Math.PI / 180);
-        ctx.translate(-cw / 2, -imgCh / 2);
-        drawFitCanvas(ctx, imgEl, 0, 0, cw, imgCh, fit);
-        ctx.restore();
-      } catch (e) { /* skip broken image */ }
-
-      ctx.restore(); // restore clip
-
-      // Border
-      if (border > 0) {
-        ctx.save();
-        ctx.strokeStyle = borderColor;
-        ctx.lineWidth = border;
-        ctx.beginPath();
-        if (shape === 'circle') {
-          ctx.ellipse(cx + cw / 2, imgCy + imgCh / 2, cw / 2 - border / 2, imgCh / 2 - border / 2, 0, 0, Math.PI * 2);
-        } else {
-          var br = (shape === 'rounded' || radius > 0) ? (radius || 12) : 0;
-          if (br > 0) {
-            var bx = cx + border / 2, by = imgCy + border / 2, bw = cw - border, bh = imgCh - border;
-            ctx.moveTo(bx + br, by);
-            ctx.lineTo(bx + bw - br, by);
-            ctx.arcTo(bx + bw, by, bx + bw, by + br, br);
-            ctx.lineTo(bx + bw, by + bh - br);
-            ctx.arcTo(bx + bw, by + bh, bx + bw - br, by + bh, br);
-            ctx.lineTo(bx + br, by + bh);
-            ctx.arcTo(bx, by + bh, bx, by + bh - br, br);
-            ctx.lineTo(bx, by + br);
-            ctx.arcTo(bx, by, bx + br, by, br);
-          } else {
-            ctx.rect(cx + border / 2, imgCy + border / 2, cw - border, imgCh - border);
-          }
-        }
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      // Captions
-      if (captionEnabled) {
-        var capFF = ov.captionFontFamily || cfg.captionFontFamily;
-        var capC, capBg;
-        if (capPos === 'overlay') {
-          var olBg = ov.captionOverlayBg || cfg.captionOverlayBg || '#000000';
-          var hr = parseInt(olBg.slice(1,3),16), hg = parseInt(olBg.slice(3,5),16), hb = parseInt(olBg.slice(5,7),16);
-          capC = ov.captionOverlayColor || cfg.captionOverlayColor || '#ffffff';
-          capBg = 'rgba(' + hr + ',' + hg + ',' + hb + ',0.55)';
-        } else {
-          capC = ov.captionColor || cfg.captionColor;
-          capBg = ov.captionBgColor || cfg.captionBgColor;
-        }
-        var capText = getCaption(img, i, cfg);
-
-        ctx.save();
-        ctx.font = capFS + 'px ' + capFF;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        var capY;
-        if (capPos === 'above') { capY = cy; }
-        else if (capPos === 'overlay') { capY = imgCy + (imgCh - capH) / 2; }
-        else { capY = imgCy + imgCh; }
-
-        ctx.fillStyle = capBg;
-        ctx.fillRect(cx, capY, cw, capH);
-        ctx.fillStyle = capC;
-        ctx.fillText(capText, cx + cw / 2, capY + capH / 2, cw);
-        ctx.restore();
-      }
-
-      // Cut guides
-      if (cfg.cutGuides) {
-        ctx.save();
-        ctx.strokeStyle = '#333333';
-        ctx.lineWidth = 1;
-        var gl = 7;
-        var gx = cx, gy = cy, gw = cw, gh = ch;
-        ctx.beginPath();
-        ctx.moveTo(gx - gl - 1, gy); ctx.lineTo(gx - 1, gy);
-        ctx.moveTo(gx, gy - gl - 1); ctx.lineTo(gx, gy - 1);
-        ctx.moveTo(gx + gw + 1, gy); ctx.lineTo(gx + gw + gl + 1, gy);
-        ctx.moveTo(gx + gw, gy - gl - 1); ctx.lineTo(gx + gw, gy - 1);
-        ctx.moveTo(gx - gl - 1, gy + gh); ctx.lineTo(gx - 1, gy + gh);
-        ctx.moveTo(gx, gy + gh + 1); ctx.lineTo(gx, gy + gh + gl + 1);
-        ctx.moveTo(gx + gw + 1, gy + gh); ctx.lineTo(gx + gw + gl + 1, gy + gh);
-        ctx.moveTo(gx + gw, gy + gh + 1); ctx.lineTo(gx + gw, gy + gh + gl + 1);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-
-    return canvas;
   }
 
   function arrayBufferToBase64(buffer) {
@@ -2752,7 +2646,13 @@
     $('#btnAddImages').addEventListener('click', () => { _insertAtSlot = -1; fileInput.click(); });
     $('#btnAddArchive').addEventListener('click', addImagesFromArchive);
     $('#btnCheckUpdate').addEventListener('click', checkForUpdates);
-    $('#updateInstallBtn').addEventListener('click', installUpdate);
+    $('#updateInstallBtn').addEventListener('click', function() {
+      if (this.dataset.mode === 'manual') {
+        window.__TAURI__.core.invoke('open_url', { url: _updateAvailableUrl }).catch(function() {});
+      } else {
+        installUpdate();
+      }
+    });
     $('#updateCancelBtn').addEventListener('click', function() { $('#modalUpdate').style.display = 'none'; });
     $('#updateModalClose').addEventListener('click', function() { $('#modalUpdate').style.display = 'none'; });
     fileInput.addEventListener('change', handleFileInputChange);
@@ -3105,6 +3005,18 @@
     loadPrinters();
     // Poster button state
     $('#btnPosterMode').classList.toggle('tb-active', $('#posterEnabled').checked);
+
+    // Archivos abiertos desde el Explorador de Windows (clic derecho → Abrir con)
+    if (window.__TAURI__) {
+      var startupFiles = await window.__TAURI__.core.invoke('get_startup_files').catch(function() { return []; });
+      if (startupFiles.length > 0) {
+        await openFilesFromPaths(startupFiles);
+      }
+      // Cuando la app ya está abierta y el usuario abre más archivos
+      window.__TAURI__.event.listen('open-files', function(event) {
+        openFilesFromPaths(event.payload);
+      });
+    }
   }
 
   function showToast(msg, duration) {

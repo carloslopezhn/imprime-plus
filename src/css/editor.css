@@ -475,6 +475,7 @@ input[type="range"].fc:focus { box-shadow: none; }
   align-items: center;
   justify-content: center;
   cursor: grab;
+  box-sizing: border-box;
 }
 
 .img-cell img {

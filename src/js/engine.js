@@ -147,15 +147,5 @@ const Engine = (function () {
     return pages;
   }
 
-  /**
-   * Generate a clip-path CSS value for a shape.
-   */
-  function getShapeClip(shape) {
-    switch (shape) {
-      case 'circle': return 'circle(50% at 50% 50%)';
-      default: return 'none';
-    }
-  }
-
-  return { toPx, fromPx, computeLayout, paginate, getShapeClip, UNIT_TO_PX };
+  return { toPx, fromPx, computeLayout, paginate, UNIT_TO_PX };
 })();
