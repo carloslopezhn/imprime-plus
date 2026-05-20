@@ -2116,10 +2116,14 @@
       zoomLevel: 1,
     });
 
+    // El host DEBE estar dentro del viewport visible (no en left:-100000px) o
+    // html2canvas en Tauri WebView produce un canvas en blanco. Lo ocultamos
+    // visualmente con opacity:0 + z-index negativo + overflow:hidden.
     var host = document.createElement('div');
     host.style.cssText =
-      'position:fixed;left:-100000px;top:0;width:' + layout.pageW + 'px;' +
-      'height:' + layout.pageH + 'px;pointer-events:none;background:#ffffff;';
+      'position:fixed;left:0;top:0;width:' + layout.pageW + 'px;' +
+      'height:' + layout.pageH + 'px;pointer-events:none;background:#ffffff;' +
+      'opacity:0;z-index:-2147483647;overflow:hidden;contain:strict;';
     host.appendChild(pageEl);
     document.body.appendChild(host);
 
@@ -2136,6 +2140,15 @@
         });
       }));
 
+      // Espera a que fuentes terminen de cargar (evita texto faltante).
+      if (document.fonts && document.fonts.ready) {
+        try { await document.fonts.ready; } catch (_) {}
+      }
+      // Doble RAF: garantiza que el browser pinte el host antes de rasterizar.
+      await new Promise(function(resolve) {
+        requestAnimationFrame(function() { requestAnimationFrame(resolve); });
+      });
+
       var canvas = await html2canvas(pageEl, {
         scale: scale,
         backgroundColor: '#ffffff',
@@ -2145,8 +2158,6 @@
         logging: false,
         width: layout.pageW,
         height: layout.pageH,
-        windowWidth: layout.pageW,
-        windowHeight: layout.pageH,
       });
       return canvas;
     } finally {

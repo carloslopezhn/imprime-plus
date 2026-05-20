@@ -63,9 +63,16 @@ $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $KeyFile -Raw)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "acero20!!!!"
 
 Push-Location $ProjectRoot
-npx tauri build 2>&1
-if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Build failed!" }
+# PowerShell 5.1 trata el stderr de native commands como error terminante cuando
+# $ErrorActionPreference='Stop'. Tauri/Node escriben "Info..." a stderr → falso
+# fallo. Bajamos a Continue durante el build y volvemos a Stop después.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+npx tauri build
+$buildExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
 Pop-Location
+if ($buildExit -ne 0) { throw "Build failed (exit $buildExit)" }
 
 # ---- Step 2: Locate artifacts ----
 Write-Host "`n[2/5] Locating artifacts..." -ForegroundColor Yellow
