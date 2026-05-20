@@ -15,9 +15,12 @@ $CargoToml   = "$ProjectRoot\src-tauri\Cargo.toml"
 $KeyFile     = "$ProjectRoot\.tauri\keys.key"
 $TargetDir   = "$ProjectRoot\src-tauri\target\release\bundle\nsis"
 
-# VPS
-$VPS       = "root@162.222.204.83"
-$RemoteDir = "/root/imprime-plus"
+# Server (T40, vía NAT del Mikrotik LUGAR)
+$ServerHost = "190.92.82.186"
+$ServerPort = "2222"
+$ServerUser = "sistemas"
+$VPS        = "${ServerUser}@${ServerHost}"
+$RemoteDir  = "/home/sistemas/imprime-plus/server"
 
 # Ensure PATH — Cargo home fuera de OneDrive para evitar errores de sincronización de nube
 $env:CARGO_HOME = "C:\cargo"
@@ -76,10 +79,10 @@ $setupSize = [math]::Round((Get-Item $setup).Length / 1MB, 2)
 Write-Host "  Setup: $setupSize MB"
 Write-Host "  Signature: OK"
 
-# ---- Step 3: Upload to VPS ----
-Write-Host "`n[3/5] Uploading to VPS..." -ForegroundColor Yellow
-scp $setup "${VPS}:${RemoteDir}/downloads/Imprime+_${version}_x64-setup.exe"
-scp $sig   "${VPS}:${RemoteDir}/downloads/Imprime+_${version}_x64-setup.exe.sig"
+# ---- Step 3: Upload to server ----
+Write-Host "`n[3/5] Uploading to T40..." -ForegroundColor Yellow
+scp -P $ServerPort $setup "${VPS}:${RemoteDir}/downloads/Imprime+_${version}_x64-setup.exe"
+scp -P $ServerPort $sig   "${VPS}:${RemoteDir}/downloads/Imprime+_${version}_x64-setup.exe.sig"
 
 # ---- Step 4: Generate and upload latest.json ----
 Write-Host "`n[4/5] Updating latest.json..." -ForegroundColor Yellow
@@ -102,12 +105,12 @@ $latestJson = @"
 
 $latestFile = "$env:TEMP\latest.json"
 [System.IO.File]::WriteAllText($latestFile, $latestJson, [System.Text.UTF8Encoding]::new($false))
-scp $latestFile "${VPS}:${RemoteDir}/data/latest.json"
+scp -P $ServerPort $latestFile "${VPS}:${RemoteDir}/data/latest.json"
 Remove-Item $latestFile -ErrorAction SilentlyContinue
 
 # ---- Step 5: Rebuild Docker container ----
 Write-Host "`n[5/5] Rebuilding Docker container..." -ForegroundColor Yellow
-ssh $VPS "cd $RemoteDir && docker compose build web && docker compose up -d --force-recreate web"
+ssh -p $ServerPort $VPS "cd $RemoteDir && git pull && docker compose build web && docker compose up -d --force-recreate web"
 
 # ---- Step 6: Commit and push version bump ----
 Write-Host "`nCommitting version bump..." -ForegroundColor Yellow

@@ -17,8 +17,6 @@ services:
     build: .
     container_name: imprime-plus-web
     restart: unless-stopped
-    ports:
-      - "5002:5002"
     depends_on:
       - db
     environment:
@@ -33,11 +31,11 @@ services:
       - ./downloads:/app/downloads
     networks:
       - default
-      - pos_default
+      - shared-net
 
 volumes:
   db_data:
 
 networks:
-  pos_default:
+  shared-net:
     external: true
