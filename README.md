@@ -2,7 +2,7 @@
 
 **Editor de impresión de imágenes para escritorio** — Diseña layouts profesionales de fotos y envíalos directamente a tu impresora.
 
-[![Versión](https://img.shields.io/badge/versión-1.9.2-blue.svg)](https://imprime.utp.hn)
+[![Versión](https://img.shields.io/badge/versión-1.9.12-blue.svg)](https://imprime.utp.hn)
 [![Tauri](https://img.shields.io/badge/Tauri-v2-orange.svg)](https://tauri.app)
 [![Plataforma](https://img.shields.io/badge/plataforma-Windows-lightgrey.svg)]()
 [![Licencia](https://img.shields.io/badge/licencia-MIT-green.svg)](LICENSE)
@@ -237,9 +237,9 @@ El script `deploy.ps1` automatiza el proceso completo:
 6. **Hace commit y push** del bump de versión a GitHub
 
 ```powershell
-.\deploy.ps1              # 1.9.2 → 1.9.3
-.\deploy.ps1 -BumpType minor   # 1.9.2 → 1.10.0
-.\deploy.ps1 -BumpType major   # 1.9.2 → 2.0.0
+.\deploy.ps1                   # 1.9.12 → 1.9.13
+.\deploy.ps1 -BumpType minor   # 1.9.12 → 1.10.0
+.\deploy.ps1 -BumpType major   # 1.9.12 → 2.0.0
 ```
 
 ---
