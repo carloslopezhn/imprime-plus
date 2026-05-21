@@ -116,14 +116,22 @@ scp -P $ServerPort $latestFile "${VPS}:${RemoteDir}/data/latest.json"
 Remove-Item $latestFile -ErrorAction SilentlyContinue
 
 # ---- Step 5: Rebuild Docker container ----
+# ssh y git escriben progreso a stderr; en PowerShell 5.1 con EAP='Stop' eso
+# se convierte en NativeCommandError. Bajamos a Continue para esta sección.
 Write-Host "`n[5/5] Rebuilding Docker container..." -ForegroundColor Yellow
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
 ssh -p $ServerPort $VPS "cd $RemoteDir && git pull && docker compose build web && docker compose up -d --force-recreate web"
+$sshExit = $LASTEXITCODE
 
 # ---- Step 6: Commit and push version bump ----
 Write-Host "`nCommitting version bump..." -ForegroundColor Yellow
 git -C $ProjectRoot add src-tauri/tauri.conf.json src-tauri/Cargo.toml
 git -C $ProjectRoot commit -m "chore: release v$version"
 git -C $ProjectRoot push origin main
+$ErrorActionPreference = $prevEAP
+
+if ($sshExit -ne 0) { Write-Warning "Docker rebuild exit code: $sshExit (revisar T40 manualmente)" }
 
 Write-Host "`n=== Deploy complete! ===" -ForegroundColor Green
 Write-Host "  Version:  $version"

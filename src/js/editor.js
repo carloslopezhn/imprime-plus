@@ -2115,6 +2115,13 @@
       totalPages: 1,
       zoomLevel: 1,
     });
+    // `.print-page` tiene `display:none` por defecto en editor.css; solo
+    // `.active-page` lo muestra. Para forPrint no agregamos `active-page`
+    // (evita estilos de borde activo), pero SI necesitamos forzar display:
+    // sin esto html2canvas rasteriza un elemento oculto → canvas en blanco.
+    pageEl.style.display = 'block';
+    pageEl.style.visibility = 'visible';
+    pageEl.style.transform = 'none';
 
     // El host DEBE estar dentro del viewport visible (no en left:-100000px) o
     // html2canvas en Tauri WebView produce un canvas en blanco. Lo ocultamos
