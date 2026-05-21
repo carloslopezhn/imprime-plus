@@ -167,7 +167,10 @@ def check_update(target, arch, current_version):
     if server <= current:
         return '', 204, headers
 
-    platform_key = target
+    # El plugin tauri-plugin-updater 2.x sustituye {{target}} con la familia OS
+    # ("windows", "darwin", "linux"), no con la clave compuesta del latest.json.
+    # La clave del wrapper "platforms" debe construirse como "<target>-<arch>".
+    platform_key = f"{target}-{arch}"
     platforms = latest.get('platforms', {})
     if platform_key not in platforms:
         return '', 204, headers
