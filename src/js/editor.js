@@ -1766,19 +1766,34 @@
           inner.style.borderRadius = (radius || 12) + 'px';
         }
 
-        const imgEl = document.createElement('img');
-        imgEl.src = img.src;
-        imgEl.alt = img.name;
-        imgEl.draggable = false;
-
         var ox = ov.offsetX || 0;
         var oy = ov.offsetY || 0;
         var zoomFactor = (ov.zoom || 100) / 100;
-
         var filterStr = buildFilterString(ov.filters);
-        imgEl.style.cssText = 'display:block;width:100%;height:100%;' +
-          'object-fit:' + fit + ';transform-origin:center center;' +
-          (filterStr ? 'filter:' + filterStr + ';' : '');
+
+        // html2canvas (impresión) ignora object-fit en <img> y dibuja la imagen
+        // estirada → deformada. Pero SÍ respeta background-size. Para que el
+        // print iguale la pantalla, en forPrint la imagen se renderiza como
+        // background-image de un <div>; la preview sigue usando <img object-fit>.
+        var imgEl;
+        if (forPrint) {
+          var bgSize = fit === 'contain' ? 'contain' : (fit === 'fill' ? '100% 100%' : 'cover');
+          imgEl = document.createElement('div');
+          imgEl.style.cssText = 'display:block;width:100%;height:100%;' +
+            'background-image:url("' + img.src + '");' +
+            'background-size:' + bgSize + ';' +
+            'background-position:center center;background-repeat:no-repeat;' +
+            'transform-origin:center center;' +
+            (filterStr ? 'filter:' + filterStr + ';' : '');
+        } else {
+          imgEl = document.createElement('img');
+          imgEl.src = img.src;
+          imgEl.alt = img.name;
+          imgEl.draggable = false;
+          imgEl.style.cssText = 'display:block;width:100%;height:100%;' +
+            'object-fit:' + fit + ';transform-origin:center center;' +
+            (filterStr ? 'filter:' + filterStr + ';' : '');
+        }
 
         var maxPanX = Math.max(0, (zoomFactor - 1) * cw / 2);
         var maxPanY = Math.max(0, (zoomFactor - 1) * ch / 2);
@@ -2135,15 +2150,19 @@
     document.body.appendChild(host);
 
     try {
-      var imgs = pageEl.querySelectorAll('img');
-      await Promise.all(Array.prototype.map.call(imgs, function(im) {
-        if (im.complete && im.naturalWidth > 0) return Promise.resolve();
-        if (typeof im.decode === 'function') {
-          return im.decode().catch(function() { return null; });
-        }
+      // forPrint renderiza las imágenes como background-image de <div> (no <img>),
+      // porque html2canvas ignora object-fit. Precargamos cada src para que
+      // html2canvas las tenga decodificadas al rasterizar el background.
+      var srcs = pageImages.filter(Boolean).map(function(im) { return im.src; });
+      await Promise.all(srcs.map(function(src) {
         return new Promise(function(resolve) {
-          im.addEventListener('load', resolve, { once: true });
-          im.addEventListener('error', resolve, { once: true });
+          var probe = new Image();
+          probe.onload = function() {
+            if (typeof probe.decode === 'function') probe.decode().then(resolve, resolve);
+            else resolve();
+          };
+          probe.onerror = resolve;
+          probe.src = src;
         });
       }));
 
