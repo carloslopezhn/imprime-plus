@@ -46,6 +46,8 @@ const HORZRES: i32 = 8;
 const VERTRES: i32 = 10;
 const PRINTER_ENUM_LOCAL: DWORD = 2;
 const PRINTER_ENUM_CONNECTIONS: DWORD = 4;
+// Modo de escalado GDI de máxima calidad (interpolación, no borra scanlines).
+const HALFTONE: i32 = 4;
 
 #[link(name = "gdi32")]
 extern "system" {
@@ -56,6 +58,8 @@ extern "system" {
     fn StartPage(hdc: isize) -> i32;
     fn EndPage(hdc: isize) -> i32;
     fn GetDeviceCaps(hdc: isize, index: i32) -> i32;
+    fn SetStretchBltMode(hdc: isize, mode: i32) -> i32;
+    fn SetBrushOrgEx(hdc: isize, x: i32, y: i32, lppt: *mut c_void) -> i32;
     fn StretchDIBits(
         hdc: isize, x_dest: i32, y_dest: i32, dest_w: i32, dest_h: i32,
         x_src: i32, y_src: i32, src_w: i32, src_h: i32,
@@ -144,15 +148,9 @@ pub fn print_pages(request: PrintRequest) -> Result<String, String> {
         return Err("No se especifico impresora".into());
     }
 
-    let mut decoded: Vec<image::RgbaImage> = Vec::new();
-    for (i, b64) in request.pages.iter().enumerate() {
-        let bytes = BASE64.decode(b64)
-            .map_err(|e| format!("Error base64 pagina {}: {}", i + 1, e))?;
-        let img = image::load_from_memory_with_format(&bytes, image::ImageFormat::Jpeg)
-            .map_err(|e| format!("Error JPEG pagina {}: {}", i + 1, e))?;
-        decoded.push(img.to_rgba8());
-    }
-
+    // Decodificación PÁGINA POR PÁGINA dentro del bucle (auto-detecta el formato:
+    // PNG sin pérdida o JPEG). Así el pico de memoria es 1 página, lo que permite
+    // DPI extremos (600/1200) sin acumular todas las páginas en RAM.
     let copies = request.copies.max(1);
 
     unsafe {
@@ -180,13 +178,19 @@ pub fn print_pages(request: PrintRequest) -> Result<String, String> {
                 return Err("Error al iniciar documento".into());
             }
 
-            for (pi, page_img) in decoded.iter().enumerate() {
-                if StartPage(hdc) <= 0 {
-                    EndDoc(hdc);
-                    DeleteDC(hdc);
-                    return Err(format!("Error pagina {}", pi + 1));
-                }
-
+            for (pi, b64) in request.pages.iter().enumerate() {
+                // Decodificar esta página (formato autodetectado).
+                let bytes = match BASE64.decode(b64) {
+                    Ok(b) => b,
+                    Err(e) => { EndDoc(hdc); DeleteDC(hdc);
+                        return Err(format!("Error base64 pagina {}: {}", pi + 1, e)); }
+                };
+                let dynimg = match image::load_from_memory(&bytes) {
+                    Ok(d) => d,
+                    Err(e) => { EndDoc(hdc); DeleteDC(hdc);
+                        return Err(format!("Error decodificando pagina {}: {}", pi + 1, e)); }
+                };
+                let page_img = dynimg.to_rgba8();
                 let iw = page_img.width() as i32;
                 let ih = page_img.height() as i32;
 
@@ -211,6 +215,18 @@ pub fn print_pages(request: PrintRequest) -> Result<String, String> {
                     bgra.push(px[0]);
                     bgra.push(px[3]);
                 }
+
+                if StartPage(hdc) <= 0 {
+                    EndDoc(hdc);
+                    DeleteDC(hdc);
+                    return Err(format!("Error pagina {}", pi + 1));
+                }
+
+                // CALIDAD MÁXIMA: interpolación HALFTONE al escalar el bitmap a la
+                // resolución real de la impresora (en vez del BLACKONWHITE por
+                // defecto, que borra scanlines y deja la impresión borrosa).
+                SetStretchBltMode(hdc, HALFTONE);
+                SetBrushOrgEx(hdc, 0, 0, std::ptr::null_mut());
 
                 StretchDIBits(
                     hdc, 0, 0, paper_w, paper_h,

@@ -2105,7 +2105,20 @@
   }
 
   // -- Canvas rendering for native print --
-  var PRINT_DPI = 300;
+  // CALIDAD MÁXIMA: 1200 DPI objetivo. Se rasteriza la página a 1200/96 = 12.5x.
+  var PRINT_DPI = 1200;
+  // Límite seguro del lado del canvas del WebView (Chromium ~16384). Si una
+  // página a 1200 DPI lo superaría, se baja la escala lo justo para no romper
+  // (canvas en blanco) — manteniendo la máxima resolución posible.
+  var MAX_CANVAS_PX = 16000;
+
+  // Escala efectiva = min(dpi/96, límite por ancho, límite por alto).
+  function effectiveScale(pageWpx, pageHpx, dpi) {
+    var s = dpi / 96;
+    var byW = MAX_CANVAS_PX / Math.max(1, pageWpx);
+    var byH = MAX_CANVAS_PX / Math.max(1, pageHpx);
+    return Math.min(s, byW, byH);
+  }
 
   function loadImageEl(src) {
     return new Promise(function(resolve, reject) {
@@ -2122,7 +2135,7 @@
     if (typeof html2canvas === 'undefined') {
       throw new Error('html2canvas no está cargado');
     }
-    var scale = dpi / 96;
+    var scale = effectiveScale(layout.pageW, layout.pageH, dpi);
 
     var pageEl = buildPageEl({ images: pageImages }, layout, cfg, 0, {
       forPrint: true,
@@ -2202,11 +2215,15 @@
   }
 
   async function renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, col, row, dpi, filters) {
-    var scale = dpi / 96;
+    var scale = effectiveScale(pageW, pageH, dpi);
     var canvas = document.createElement('canvas');
     canvas.width = Math.round(pageW * scale);
     canvas.height = Math.round(pageH * scale);
     var ctx = canvas.getContext('2d');
+
+    // Suavizado de máxima calidad al redimensionar la imagen del póster.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     // White background
     ctx.fillStyle = '#ffffff';
@@ -2469,7 +2486,7 @@
         canvas = await renderPageToCanvas(allPages[pageIndex].images, layout, cfg, PRINT_DPI);
       }
 
-      var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/jpeg', 0.92); });
+      var blob = await new Promise(function(resolve) { canvas.toBlob(resolve, 'image/png'); });
       var buf = await blob.arrayBuffer();
       var pageData = arrayBufferToBase64(buf);
 
@@ -2528,7 +2545,7 @@
             await new Promise(function(r) { setTimeout(r, 10); });
             var canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, pc, pr, PRINT_DPI, posterFilters);
             var blob = await new Promise(function(resolve) {
-              canvas.toBlob(resolve, 'image/jpeg', 0.92);
+              canvas.toBlob(resolve, 'image/png');
             });
             var buf = await blob.arrayBuffer();
             pageDataArray.push(arrayBufferToBase64(buf));
@@ -2543,7 +2560,7 @@
           await new Promise(function(r) { setTimeout(r, 10); });
           var canvas = await renderPageToCanvas(allPages[pi].images, layout, cfg, PRINT_DPI);
           var blob = await new Promise(function(resolve) {
-            canvas.toBlob(resolve, 'image/jpeg', 0.92);
+            canvas.toBlob(resolve, 'image/png');
           });
           var buf = await blob.arrayBuffer();
           pageDataArray.push(arrayBufferToBase64(buf));
