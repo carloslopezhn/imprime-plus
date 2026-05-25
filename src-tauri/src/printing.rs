@@ -185,7 +185,18 @@ pub fn print_pages(request: PrintRequest) -> Result<String, String> {
                     Err(e) => { EndDoc(hdc); DeleteDC(hdc);
                         return Err(format!("Error base64 pagina {}: {}", pi + 1, e)); }
                 };
-                let dynimg = match image::load_from_memory(&bytes) {
+                // ImageReader con formato autodetectado y SIN límite de memoria,
+                // para que no rechace bitmaps grandes (el default es 512 MB, que
+                // a 1200 DPI daba "memory limit exceeded"). A 600 DPI sobra, pero
+                // dejamos sin tope por robustez ante páginas grandes.
+                let mut reader = match image::ImageReader::new(std::io::Cursor::new(&bytes))
+                    .with_guessed_format() {
+                    Ok(r) => r,
+                    Err(e) => { EndDoc(hdc); DeleteDC(hdc);
+                        return Err(format!("Error leyendo pagina {}: {}", pi + 1, e)); }
+                };
+                reader.no_limits();
+                let dynimg = match reader.decode() {
                     Ok(d) => d,
                     Err(e) => { EndDoc(hdc); DeleteDC(hdc);
                         return Err(format!("Error decodificando pagina {}: {}", pi + 1, e)); }

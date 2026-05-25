@@ -2105,8 +2105,11 @@
   }
 
   // -- Canvas rendering for native print --
-  // CALIDAD MÁXIMA: 1200 DPI objetivo. Se rasteriza la página a 1200/96 = 12.5x.
-  var PRINT_DPI = 1200;
+  // CALIDAD ALTA: 600 DPI (máximo real útil para impresión ráster). 1200 DPI
+  // generaba bitmaps de ~139 MP (557 MB en RGBA) que excedían el límite de
+  // memoria del decodificador → "memory limit exceeded". A 600 DPI = ~35 MP
+  // (139 MB), nítido y estable. La nitidez real la da HALFTONE en el backend.
+  var PRINT_DPI = 600;
   // Límite seguro del lado del canvas del WebView (Chromium ~16384). Si una
   // página a 1200 DPI lo superaría, se baja la escala lo justo para no romper
   // (canvas en blanco) — manteniendo la máxima resolución posible.
