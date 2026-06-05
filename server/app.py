@@ -13,6 +13,7 @@ Compress(app)
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 DOWNLOADS_DIR = os.path.join(os.path.dirname(__file__), "downloads")
+WINUI_DIR = os.path.join(os.path.dirname(__file__), "winui")
 
 # ---------- Database ----------
 DB_CONFIG = {
@@ -214,6 +215,16 @@ def download_page():
 @app.route('/downloads/<filename>')
 def serve_download(filename):
     return send_from_directory(DOWNLOADS_DIR, filename, as_attachment=True)
+
+
+# ---------- Imprime+ nativo (WinUI 3): feed + instalador Velopack ----------
+# Sirve releases.win.json / *.nupkg / Setup.exe para que el UpdateManager de la
+# app WinUI lea el feed. Aditivo: NO toca el updater Tauri (/api/update/...).
+
+@app.route('/winui/<path:filename>')
+def serve_winui(filename):
+    as_attach = filename.lower().endswith(('.exe', '.nupkg', '.zip'))
+    return send_from_directory(WINUI_DIR, filename, as_attachment=as_attach)
 
 
 if __name__ == '__main__':

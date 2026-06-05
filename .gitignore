@@ -8,3 +8,5 @@ server/data/
 server/downloads/
 __pycache__/
 *.pyc
+
+server/winui/
