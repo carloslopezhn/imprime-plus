@@ -38,7 +38,8 @@
       <option value="">Cargando...</option>
     </select>
     <button class="tb-btn" id="btnPrinterConfig" title="Configuracion de impresora"><i class="bi bi-sliders"></i></button>
-    <button class="tb-btn tb-primary" id="btnPrint" title="Imprimir todas las paginas"><i class="bi bi-printer"></i> Imprimir</button>
+    <input type="text" class="tb-range" id="printRange" placeholder="Todas" title="Paginas a imprimir — ej: 1-3,5. Vacio = todas" autocomplete="off">
+    <button class="tb-btn tb-primary" id="btnPrint" title="Imprimir (todas las paginas o el rango indicado)"><i class="bi bi-printer"></i> Imprimir</button>
     <div class="tb-sep"></div>
     <button class="tb-btn" id="btnClearConfig" title="Limpiar configuraciones individuales"><i class="bi bi-eraser"></i></button>
     <button class="tb-btn" id="btnClearAll" title="Vaciar todo (imagenes y configuraciones)"><i class="bi bi-trash3"></i> Vaciar</button>
@@ -291,6 +292,7 @@
 
   <!-- ============ CANVAS AREA ============ -->
   <main class="editor-canvas-area" id="canvasArea">
+    <div class="tab-bar" id="tabBar"></div>
     <div class="canvas-scroll" id="canvasScroll">
       <div class="pages-container" id="pagesContainer">
         <!-- Pages rendered by JS -->

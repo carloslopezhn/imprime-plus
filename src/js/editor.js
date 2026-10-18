@@ -20,6 +20,9 @@
   let totalPages = 1;
   let moveModeId = null;
   let moveTimer = null;
+  // Pestañas (multi-documento). Cada pestaña = {id,name,images,selectedIds,currentPage,idCounter,config}
+  let tabs = [];
+  let activeTab = 0;
 
   function imageCount() { return images.filter(function(i) { return i !== null; }).length; }
   function trimTrailingNulls() { while (images.length > 0 && images[images.length - 1] === null) images.pop(); }
@@ -192,8 +195,8 @@
     writeAppFile(CONFIG_FILE, cfg);
   }
 
-  async function loadConfig() {
-    var saved = await readAppFile(CONFIG_FILE);
+  // Aplica un objeto de config (de disco o de una pestaña) a los inputs del DOM
+  function applyConfigObj(saved) {
     if (!saved) return;
     var map = {
       unit:'pageUnit', pageWidth:'pageWidth', pageHeight:'pageHeight',
@@ -206,7 +209,7 @@
       captionFontFamily:'captionFontFamily', captionColor:'captionColor',
       captionBgColor:'captionBgColor', captionOverlayColor:'captionOverlayColor',
       captionOverlayBg:'captionOverlayBg', captionSource:'captionSource',
-
+      posterCols:'posterCols', posterRows:'posterRows'
     };
     for (var k in map) {
       if (saved[k] !== undefined && saved[k] !== null) {
@@ -218,8 +221,6 @@
     if (saved.cutGuides !== undefined) $('#cutGuidesEnabled').checked = saved.cutGuides;
     if (saved.marginsEnabled !== undefined) $('#marginsEnabled').checked = saved.marginsEnabled;
     if (saved.posterEnabled !== undefined) $('#posterEnabled').checked = saved.posterEnabled;
-    if (saved.posterCols !== undefined) $('#posterCols').value = saved.posterCols;
-    if (saved.posterRows !== undefined) $('#posterRows').value = saved.posterRows;
     // Restore alignment button groups
     ['imgAlignH', 'imgAlignV'].forEach(function(key) {
       if (saved[key]) {
@@ -232,6 +233,12 @@
         }
       }
     });
+  }
+
+  async function loadConfig() {
+    var saved = await readAppFile(CONFIG_FILE);
+    if (!saved) return;
+    applyConfigObj(saved);
     // Restore saved printer
     if (saved.savedPrinter) savedPrinter = saved.savedPrinter;
     // Restore default preset
@@ -1376,7 +1383,20 @@
     }
   }
 
+  function syncTabCounts() {
+    var bar = $('#tabBar');
+    if (!bar) return;
+    var labels = bar.querySelectorAll('.tab .tab-label');
+    tabs.forEach(function(t, i) {
+      if (!labels[i]) return;
+      var imgs = (i === activeTab) ? images : t.images;
+      var count = (imgs || []).filter(Boolean).length;
+      labels[i].textContent = t.name + (count ? ' (' + count + ')' : '');
+    });
+  }
+
   function render() {
+    syncTabCounts();
     const cfg = getConfig();
     if (cfg.posterEnabled) {
       updateRightPanelForMode();
@@ -2520,6 +2540,19 @@
 
     var cfg = getConfig();
 
+    // Rango de paginas (vacio = todas). selIdx: null=todas, array=indices, false=invalido
+    var __total;
+    if (cfg.posterEnabled) {
+      __total = Math.max(1, Math.min(4, cfg.posterCols)) * Math.max(1, Math.min(4, cfg.posterRows));
+    } else {
+      __total = Engine.paginate(images, Engine.computeLayout(cfg)).length;
+    }
+    var selIdx = selectedPageIndices(__total);
+    if (selIdx === false) {
+      alert('Rango de paginas invalido. Hay ' + __total + ' pagina(s). Ejemplo: 1-' + __total + ' o 1,3');
+      return;
+    }
+
     // Show progress
     var btn = $('#btnPrint');
     var origText = btn.innerHTML;
@@ -2544,6 +2577,7 @@
         for (var pr = 0; pr < posterRows; pr++) {
           for (var pc = 0; pc < posterCols; pc++) {
             var pi = pr * posterCols + pc;
+            if (selIdx !== null && selIdx.indexOf(pi) === -1) continue;
             btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Pagina ' + (pi + 1) + '/' + totalPosterPages;
             await new Promise(function(r) { setTimeout(r, 10); });
             var canvas = await renderPosterPageToCanvas(imgEl, pageW, pageH, posterCols, posterRows, pc, pr, PRINT_DPI, posterFilters);
@@ -2559,6 +2593,7 @@
         var allPages = Engine.paginate(images, layout);
 
         for (var pi = 0; pi < allPages.length; pi++) {
+          if (selIdx !== null && selIdx.indexOf(pi) === -1) continue;
           btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Pagina ' + (pi + 1) + '/' + allPages.length;
           await new Promise(function(r) { setTimeout(r, 10); });
           var canvas = await renderPageToCanvas(allPages[pi].images, layout, cfg, PRINT_DPI);
@@ -2599,6 +2634,14 @@
     zoom = 1;
 
     render();
+
+    // Rango de paginas (fallback navegador): ocultar las no seleccionadas
+    var __pgs = pagesContainer.children;
+    var __selB = selectedPageIndices(__pgs.length);
+    if (__selB === false) { alert('Rango de paginas invalido. Hay ' + __pgs.length + ' pagina(s).'); zoom = prevZoom; render(); return; }
+    for (var __i = 0; __i < __pgs.length; __i++) {
+      __pgs[__i].classList.toggle('print-hide', __selB !== null && __selB.indexOf(__i) === -1);
+    }
 
     // Inject dynamic @page size based on current page dimensions
     var cfg = getConfig();
@@ -2755,6 +2798,12 @@
       } else {
         printNow();
       }
+    });
+
+    // Enter en el campo de rango de paginas = imprimir
+    var prRange = $('#printRange');
+    if (prRange) prRange.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); $('#btnPrint').click(); }
     });
 
     // Clear all / Clear config
@@ -2987,6 +3036,8 @@
       if (e.ctrlKey && e.key === '+') { e.preventDefault(); setZoom(zoom + 0.1); }
       if (e.ctrlKey && e.key === '-') { e.preventDefault(); setZoom(zoom - 0.1); }
       if (e.ctrlKey && e.key === 'p') { e.preventDefault(); if (window.__TAURI__) printNative(); else printNow(); }
+      if (e.ctrlKey && (e.key === 't' || e.key === 'T')) { e.preventDefault(); newTab(); }
+      if (e.ctrlKey && (e.key === 'w' || e.key === 'W')) { e.preventDefault(); closeTab(activeTab); }
       if (e.key === 'Escape' && $('#modalPageConfig').classList.contains('open')) closeModal();
     });
 
@@ -3029,6 +3080,139 @@
     });
   }
 
+  // ===== Pestañas (multi-documento) =====
+  function captureActiveTab() {
+    var t = tabs[activeTab];
+    if (!t) return;
+    t.images = images;
+    t.selectedIds = selectedIds;
+    t.currentPage = currentPage;
+    t.idCounter = idCounter;
+    t.config = getConfig();
+  }
+  function loadActiveTab() {
+    var t = tabs[activeTab];
+    if (!t) return;
+    images = t.images;
+    selectedIds = t.selectedIds;
+    currentPage = t.currentPage;
+    idCounter = t.idCounter;
+    applyConfigObj(t.config);
+    currentUnit = $('#pageUnit').value || 'cm';
+    updateUnitLabels(currentUnit);
+    updateLayoutModeVisibility();
+    updateCaptionVisibility();
+    updateMarginsVisibility();
+    updatePosterVisibility();
+    updatePageSummary();
+    var pm = $('#btnPosterMode');
+    if (pm) pm.classList.toggle('tb-active', $('#posterEnabled').checked);
+    render();
+    updateInspector();
+    renderTabBar();
+  }
+  function switchTab(idx) {
+    if (idx === activeTab || !tabs[idx]) return;
+    captureActiveTab();
+    activeTab = idx;
+    loadActiveTab();
+  }
+  function newTab() {
+    captureActiveTab();
+    var baseCfg = getConfig();
+    baseCfg.posterEnabled = false; // una pestaña nueva arranca en modo normal
+    tabs.push({
+      id: 'tab' + Date.now(),
+      name: 'Documento ' + (tabs.length + 1),
+      images: [], selectedIds: new Set(), currentPage: 0, idCounter: 0,
+      config: baseCfg
+    });
+    activeTab = tabs.length - 1;
+    loadActiveTab();
+  }
+  function closeTab(idx) {
+    if (tabs.length <= 1 || !tabs[idx]) return;
+    if (idx === activeTab) captureActiveTab();
+    tabs.splice(idx, 1);
+    if (activeTab > idx) activeTab--;
+    else if (activeTab === idx) activeTab = Math.min(idx, tabs.length - 1);
+    loadActiveTab();
+  }
+  function renameTab(idx) {
+    var t = tabs[idx];
+    if (!t) return;
+    var name = prompt('Nombre de la pestaña:', t.name);
+    if (name !== null && name.trim()) { t.name = name.trim(); renderTabBar(); }
+  }
+  function renderTabBar() {
+    var bar = $('#tabBar');
+    if (!bar) return;
+    bar.innerHTML = '';
+    tabs.forEach(function(t, i) {
+      var el = document.createElement('div');
+      el.className = 'tab' + (i === activeTab ? ' active' : '');
+      var count = (t.images || []).filter(Boolean).length;
+      var label = document.createElement('span');
+      label.className = 'tab-label';
+      label.textContent = t.name + (count ? ' (' + count + ')' : '');
+      label.title = t.name + ' — doble clic para renombrar';
+      el.appendChild(label);
+      el.addEventListener('click', function() { switchTab(i); });
+      label.addEventListener('dblclick', function(ev) { ev.stopPropagation(); renameTab(i); });
+      if (tabs.length > 1) {
+        var x = document.createElement('button');
+        x.className = 'tab-close';
+        x.title = 'Cerrar pestaña';
+        x.innerHTML = '<i class="bi bi-x"></i>';
+        x.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          var n = (t.images || []).filter(Boolean).length;
+          if (n && !confirm('Cerrar "' + t.name + '"? Se perderan sus ' + n + ' imagen(es).')) return;
+          closeTab(i);
+        });
+        el.appendChild(x);
+      }
+      bar.appendChild(el);
+    });
+    var add = document.createElement('button');
+    add.className = 'tab-add';
+    add.title = 'Nueva pestaña';
+    add.innerHTML = '<i class="bi bi-plus-lg"></i>';
+    add.addEventListener('click', newTab);
+    bar.appendChild(add);
+  }
+
+  // ===== Rango de paginas a imprimir =====
+  function parsePageRange(str, total) {
+    str = (str || '').trim();
+    if (!str) return { all: true, pages: [] };
+    var seen = {};
+    var order = [];
+    str.split(',').forEach(function(part) {
+      part = part.trim();
+      if (!part) return;
+      var m = part.match(/^(\d+)\s*-\s*(\d+)$/);
+      if (m) {
+        var a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+        if (a > b) { var tmp = a; a = b; b = tmp; }
+        for (var i = a; i <= b; i++) if (i >= 1 && i <= total && !seen[i]) { seen[i] = 1; order.push(i - 1); }
+      } else if (/^\d+$/.test(part)) {
+        var n = parseInt(part, 10);
+        if (n >= 1 && n <= total && !seen[n]) { seen[n] = 1; order.push(n - 1); }
+      }
+    });
+    order.sort(function(x, y) { return x - y; });
+    return { all: false, pages: order };
+  }
+  // null = todas; array = indices 0-based seleccionados; false = rango escrito pero invalido
+  function selectedPageIndices(total) {
+    var el = $('#printRange');
+    var r = parsePageRange(el ? el.value : '', total);
+    if (r.all) return null;
+    if (!r.pages.length) return false;
+    return r.pages;
+  }
+
   // -- Init --
   async function init() {
     await loadPresets();
@@ -3045,6 +3229,10 @@
     updateMarginsVisibility();
     updatePosterVisibility();
     updatePageSummary();
+    // Pestaña inicial con la config cargada
+    tabs = [{ id: 'tab' + Date.now(), name: 'Documento 1', images: images, selectedIds: selectedIds, currentPage: currentPage, idCounter: idCounter, config: getConfig() }];
+    activeTab = 0;
+    renderTabBar();
     setupDragDrop();
     setupPaste();
     bindEvents();

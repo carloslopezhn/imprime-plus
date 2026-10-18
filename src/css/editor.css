@@ -1123,3 +1123,97 @@ input[type="range"].fc:focus { box-shadow: none; }
 #inspFiltersToggle:hover { color: var(--accent); }
 #inspFiltersSection .editor-slider-row { margin-bottom: 8px; }
 #inspFiltersSection .editor-slider-row label { font-size: 0.73rem; }
+
+/* ===== Toolbar: rango de impresion ===== */
+.tb-range {
+  height: 34px;
+  width: 92px;
+  padding: 0 10px;
+  border: 1px solid var(--input-border, var(--border));
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 0.82rem;
+  text-align: center;
+}
+.tb-range:focus { border-color: var(--accent); outline: none; }
+.tb-range::placeholder { color: var(--text-muted); }
+
+/* ===== Barra de pestañas (multi-documento) ===== */
+.tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 8px 0 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+  min-height: 38px;
+}
+.tab-bar .tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--bg-panel);
+  color: var(--panel-text-muted);
+  cursor: pointer;
+  font-size: 0.84rem;
+  white-space: nowrap;
+  user-select: none;
+}
+.tab-bar .tab:hover { background: #f3f4f6; }
+.tab-bar .tab.active {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--accent);
+  font-weight: 600;
+  box-shadow: 0 -2px 0 var(--accent) inset;
+}
+.tab-bar .tab .tab-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 170px;
+}
+.tab-bar .tab .tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+.tab-bar .tab .tab-close:hover { background: #ef4444; color: #fff; }
+.tab-bar .tab-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  min-width: 30px;
+  margin-left: 2px;
+  border: 1px dashed var(--border);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  color: var(--panel-text-muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+}
+.tab-bar .tab-add:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Ocultar paginas fuera del rango seleccionado al imprimir (fallback navegador) */
+@media print {
+  .print-hide { display: none !important; }
+  .tab-bar { display: none !important; }
+}
