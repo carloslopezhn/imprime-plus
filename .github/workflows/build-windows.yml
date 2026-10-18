@@ -29,14 +29,10 @@ jobs:
       - name: Install JS deps (solo @tauri-apps/cli; el frontend es estatico en src/)
         run: npm install
 
-      - name: Clave de updater efimera (el .exe no depende de ella; no publicamos el .sig)
-        shell: bash
-        run: |
-          npx --yes @tauri-apps/cli signer generate -w "$RUNNER_TEMP/u.key" -p ""
-          echo "TAURI_SIGNING_PRIVATE_KEY=$(cat "$RUNNER_TEMP/u.key")" >> "$GITHUB_ENV"
-          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
-
-      - name: Build (NSIS + MSI)
+      - name: Build (NSIS + MSI, updater firmado con la clave del repo)
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build
 
       - name: Subir instalador como artifact
