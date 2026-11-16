@@ -239,8 +239,16 @@ pub fn print_pages(request: PrintRequest) -> Result<String, String> {
                 SetStretchBltMode(hdc, HALFTONE);
                 SetBrushOrgEx(hdc, 0, 0, std::ptr::null_mut());
 
+                // Ajuste al área imprimible CONSERVANDO la proporción de la hoja
+                // (antes se estiraba a HORZRES×VERTRES y la página salía levemente
+                // deformada). Se centra en el área imprimible.
+                let esc = f64::min(paper_w as f64 / iw as f64, paper_h as f64 / ih as f64);
+                let dw = ((iw as f64) * esc).round() as i32;
+                let dh = ((ih as f64) * esc).round() as i32;
+                let dx = (paper_w - dw) / 2;
+                let dy = (paper_h - dh) / 2;
                 StretchDIBits(
-                    hdc, 0, 0, paper_w, paper_h,
+                    hdc, dx, dy, dw, dh,
                     0, 0, iw, ih,
                     bgra.as_ptr() as *const c_void,
                     &bmi, DIB_RGB_COLORS, SRCCOPY,

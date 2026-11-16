@@ -506,6 +506,29 @@
     $('#updateInstallBtn').style.display = 'inline-flex';
   }
 
+  // Versión instalada visible junto al nombre + búsqueda automática de actualizaciones
+  // (al abrir y cada 6 h). El aviso no interrumpe: el botón de versión se pone verde
+  // y un aviso breve invita a instalar; instalar abre el mismo modal de siempre.
+  async function initVersionBadge() {
+    var b = $('#appVersionBadge');
+    if (!b) return;
+    b.addEventListener('click', checkForUpdates);
+    if (!window.__TAURI__) { b.textContent = 'web'; return; }
+    try { b.textContent = 'v' + await window.__TAURI__.core.invoke('get_version'); } catch (_) {}
+    async function chequear() {
+      try {
+        var u = await window.__TAURI__.core.invoke('check_update');
+        if (u && u.version) {
+          b.classList.add('hay-update');
+          b.title = 'Hay una versión nueva: v' + u.version + ' · clic para instalar';
+          showToast('Hay una versión nueva de Imprime+ (v' + u.version + '). Clic en la versión para instalarla.', 6000);
+        }
+      } catch (_) { /* sin conexión: se reintenta en el próximo ciclo */ }
+    }
+    setTimeout(chequear, 8000);
+    setInterval(chequear, 6 * 3600 * 1000);
+  }
+
   async function installUpdate() {
     $('#updateInstallBtn').style.display = 'none';
     $('#updateCancelBtn').style.display = 'none';
@@ -1797,14 +1820,17 @@
         // background-image de un <div>; la preview sigue usando <img object-fit>.
         var imgEl;
         if (forPrint) {
-          var bgSize = fit === 'contain' ? 'contain' : (fit === 'fill' ? '100% 100%' : 'cover');
+          // NITIDEZ (2.4.0): html2canvas reduce cada background-image al tamaño
+          // de la celda en px CSS (96 DPI) y después lo agranda a 600 DPI →
+          // fotos borrosas. En la impresión la foto NO la dibuja html2canvas:
+          // queda un marcador vacío con los datos y drawPrintPhotos() la pinta
+          // desde el ORIGINAL a la resolución final (misma geometría que la
+          // pantalla: fit, desplazamiento, zoom, rotación, forma y filtros).
           imgEl = document.createElement('div');
-          imgEl.style.cssText = 'display:block;width:100%;height:100%;' +
-            'background-image:url("' + img.src + '");' +
-            'background-size:' + bgSize + ';' +
-            'background-position:center center;background-repeat:no-repeat;' +
-            'transform-origin:center center;' +
-            (filterStr ? 'filter:' + filterStr + ';' : '');
+          imgEl.style.cssText = 'display:block;width:100%;height:100%;';
+          imgEl.dataset.printSrc = img.src;
+          imgEl.dataset.printFit = fit || 'cover';
+          imgEl.dataset.printFilter = filterStr || '';
         } else {
           imgEl = document.createElement('img');
           imgEl.src = img.src;
@@ -1827,7 +1853,12 @@
         if (zoomFactor !== 1) transforms.push('scale(' + zoomFactor + ')');
         var rot = ov.rotation || 0;
         if (rot) transforms.push('rotate(' + rot + 'deg)');
-        if (transforms.length) imgEl.style.transform = transforms.join(' ');
+        if (forPrint) {
+          imgEl.dataset.printOx = String(clampedOx);
+          imgEl.dataset.printOy = String(clampedOy);
+          imgEl.dataset.printZoom = String(zoomFactor);
+          imgEl.dataset.printRot = String(rot);
+        } else if (transforms.length) imgEl.style.transform = transforms.join(' ');
 
         inner.appendChild(imgEl);
         cellEl.appendChild(inner);
@@ -1904,7 +1935,10 @@
           });
         }
       } else {
-        cellEl.classList.add('img-cell-empty');
+        // En la impresión la celda vacía va en blanco: el «+» de «agregar imagen»
+        // es solo de pantalla (antes salía impreso en gris).
+        if (!forPrint) cellEl.classList.add('img-cell-empty');
+        else cellEl.style.background = '#fff';
         if (!forPrint) {
           cellEl.style.cursor = 'pointer';
           cellEl.title = 'Clic para agregar imagen';
@@ -2211,7 +2245,7 @@
         requestAnimationFrame(function() { requestAnimationFrame(resolve); });
       });
 
-      var canvas = await html2canvas(pageEl, {
+      var opts = {
         scale: scale,
         backgroundColor: '#ffffff',
         useCORS: true,
@@ -2220,10 +2254,123 @@
         logging: false,
         width: layout.pageW,
         height: layout.pageH,
-      });
+      };
+      // 1) Página sin fotos (fondos, marcos, títulos de arriba/abajo) a 600 DPI.
+      var overlays = pageEl.querySelectorAll('.img-caption.overlay');
+      overlays.forEach(function(c) { c.style.visibility = 'hidden'; });
+      var canvas = await html2canvas(pageEl, opts);
+      // 2) Fotos desde el original, a la resolución final.
+      await drawPrintPhotos(canvas, pageEl, scale);
+      // 3) Títulos superpuestos a la foto: van encima (fondo transparente).
+      //    Cada título se rasteriza solo (html2canvas no dibuja hijos visibles de
+      //    un padre oculto) y se pega en su lugar a la misma escala.
+      if (overlays.length) {
+        var pr0 = pageEl.getBoundingClientRect();
+        var ctx0 = canvas.getContext('2d');
+        for (var oi = 0; oi < overlays.length; oi++) {
+          var cap = overlays[oi];
+          cap.style.visibility = 'visible';
+          var cr = cap.getBoundingClientRect();
+          if (cr.width <= 0 || cr.height <= 0) continue;
+          var capCanvas = await html2canvas(cap, { scale: scale, backgroundColor: null, useCORS: true,
+            allowTaint: true, imageTimeout: 0, logging: false });
+          ctx0.drawImage(capCanvas, Math.round((cr.left - pr0.left) * scale), Math.round((cr.top - pr0.top) * scale),
+                         Math.round(cr.width * scale), Math.round(cr.height * scale));
+        }
+      }
       return canvas;
     } finally {
       document.body.removeChild(host);
+    }
+  }
+
+  // Lee un radio de border-radius computado ("12px", "50%", "10px 20px") → {x,y} en px.
+  function radioPx(v, w, h) {
+    var p = String(v || '0').trim().split(/\s+/);
+    function uno(t, base) {
+      if (!t) return 0;
+      if (t.indexOf('%') >= 0) return parseFloat(t) / 100 * base;
+      return parseFloat(t) || 0;
+    }
+    var rx = uno(p[0], w), ry = uno(p[1] || p[0], h);
+    return { x: rx, y: ry };
+  }
+
+  // Escala los blur(Npx) del filtro CSS al espacio del canvas (los filtros del
+  // canvas no siguen la transformación).
+  function filtroEscalado(f, scale) {
+    if (!f) return 'none';
+    return f.replace(/blur\(([\d.]+)px\)/g, function(_, n) { return 'blur(' + (parseFloat(n) * scale) + 'px)'; });
+  }
+
+  // Pinta cada foto de la página desde su ORIGINAL en el canvas final (600 DPI),
+  // replicando la geometría del editor: caja = área interior de la celda (sin el
+  // borde), recorte con la forma (border-radius), fit cover/contain/fill centrado
+  // y luego translate(ox,oy) · scale(zoom) · rotate(rot) con origen en el centro.
+  async function drawPrintPhotos(canvas, pageEl, scale) {
+    var marcas = pageEl.querySelectorAll('[data-print-src]');
+    if (!marcas.length) return;
+    var ctx = canvas.getContext('2d');
+    var pr = pageEl.getBoundingClientRect();
+    var cache = {};
+    for (var k = 0; k < marcas.length; k++) {
+      var el = marcas[k];
+      var inner = el.parentElement;
+      var src = el.dataset.printSrc;
+      var im = cache[src];
+      if (!im) {
+        try { im = cache[src] = await loadImageEl(src); } catch (_) { continue; }
+      }
+      var nw = im.naturalWidth, nh = im.naturalHeight;
+      if (!nw || !nh) continue;
+      var ir = inner.getBoundingClientRect();
+      // Área interior (padding box): sin el borde de la celda.
+      var bx = ir.left - pr.left + inner.clientLeft;
+      var by = ir.top - pr.top + inner.clientTop;
+      var bw = inner.clientWidth, bh = inner.clientHeight;
+      if (bw <= 0 || bh <= 0) continue;
+      var cs = getComputedStyle(inner);
+      var bl = inner.clientLeft, bt = inner.clientTop;
+      function rad(v) {
+        var r = radioPx(v, ir.width, ir.height);
+        return { x: Math.max(0, r.x - bl), y: Math.max(0, r.y - bt) };
+      }
+      var radios = [rad(cs.borderTopLeftRadius), rad(cs.borderTopRightRadius),
+                    rad(cs.borderBottomRightRadius), rad(cs.borderBottomLeftRadius)];
+      // Tamaño de la foto dentro de la caja según el ajuste (igual que object-fit).
+      var fit = el.dataset.printFit, dw, dh;
+      if (fit === 'fill') { dw = bw; dh = bh; }
+      else {
+        var sc = fit === 'contain' ? Math.min(bw / nw, bh / nh) : Math.max(bw / nw, bh / nh);
+        dw = nw * sc; dh = nh * sc;
+      }
+      var ox = parseFloat(el.dataset.printOx) || 0;
+      var oy = parseFloat(el.dataset.printOy) || 0;
+      var zoom = parseFloat(el.dataset.printZoom) || 1;
+      var rot = parseFloat(el.dataset.printRot) || 0;
+
+      ctx.save();
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function' && radios.some(function(r) { return r.x > 0 || r.y > 0; })) {
+        ctx.roundRect(bx, by, bw, bh, radios.map(function(r) { return { x: r.x, y: r.y }; }));
+      } else {
+        ctx.rect(bx, by, bw, bh);
+      }
+      ctx.clip();
+      ctx.translate(bx + bw / 2 + ox, by + bh / 2 + oy);
+      if (zoom !== 1) ctx.scale(zoom, zoom);
+      if (rot) ctx.rotate(rot * Math.PI / 180);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.filter = filtroEscalado(el.dataset.printFilter, scale);
+      // La foto vive en una caja del tamaño de la celda (como el <div> de la
+      // pantalla) y se recorta a esa caja antes de la transformación.
+      ctx.beginPath();
+      ctx.rect(-bw / 2, -bh / 2, bw, bh);
+      ctx.clip();
+      ctx.drawImage(im, -dw / 2, -dh / 2, dw, dh);
+      ctx.restore();
     }
   }
 
@@ -3236,6 +3383,18 @@
     setupDragDrop();
     setupPaste();
     bindEvents();
+    if (window.__IMPRIME_TEST__) {
+      window.__imprimeTest = {
+        render: async function(items, dpi, cfgPatch) {
+          images = items.map(function(it, i) { return { id: ++idCounter, src: it.src, name: 'p' + i, caption: 'Foto ' + i, overrides: it.ov || {} }; });
+          var cfg = Object.assign(getConfig(), cfgPatch || {}); var layout = Engine.computeLayout(cfg);
+          var pages = Engine.paginate(images, layout);
+          var c = await renderPageToCanvas(pages[0].images, layout, cfg, dpi || PRINT_DPI);
+          return { w: c.width, h: c.height, png: c.toDataURL('image/png') };
+        }
+      };
+    }
+    initVersionBadge();
     // Set spacing linked visual state
     if (spacingLinked) {
       $('#btnLinkSpacing').classList.add('active');

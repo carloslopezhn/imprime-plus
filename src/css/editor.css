@@ -174,6 +174,10 @@ input[type="range"].fc:focus { box-shadow: none; }
   white-space: nowrap;
 }
 .brand-plus { color: #e11d48; font-weight: 800; }
+.brand-ver { margin-left: 8px; font-size: 0.72rem; font-weight: 600; color: #64748b; background: #f1f5f9;
+  border: 1px solid #e2e8f0; border-radius: 999px; padding: 1px 8px; cursor: pointer; vertical-align: middle; }
+.brand-ver:hover { background: #e2e8f0; }
+.brand-ver.hay-update { color: #fff; background: #16a34a; border-color: #16a34a; }
 
 .toolbar-actions {
   display: flex;
